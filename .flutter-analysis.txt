@@ -1,0 +1,12 @@
+﻿Analyzing admincarwashepd...                                    
+
+   info - Statements in an if should be enclosed in a block - lib\features\carwash_management\presentation\views\carwash_dashboard_screen.dart:369:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\carwash_management\presentation\views\carwash_dashboard_screen.dart:371:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\carwash_management\presentation\views\carwash_dashboard_screen.dart:373:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\carwash_management\presentation\views\carwash_dashboard_screen.dart:375:9 - curly_braces_in_flow_control_structures
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\epd_management\presentation\views\epd_dashboard_screen.dart:158:33 - deprecated_member_use
+   info - Statements in an if should be enclosed in a block - lib\features\epd_management\presentation\views\epd_dashboard_screen.dart:360:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\epd_management\presentation\views\epd_dashboard_screen.dart:362:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\epd_management\presentation\views\epd_dashboard_screen.dart:364:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\epd_management\presentation\views\epd_dashboard_screen.dart:366:9 - curly_braces_in_flow_control_structures
+

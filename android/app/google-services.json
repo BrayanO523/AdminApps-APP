@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "595471223494",
+    "project_id": "admincarwashepd",
+    "storage_bucket": "admincarwashepd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:595471223494:android:f7d03548d75a88848ae5c7",
+        "android_client_info": {
+          "package_name": "com.example.admincarwashepd"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjGdFna3O4DOLXkAribmajjzMRWs1iBXE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
