@@ -19,6 +19,7 @@ class CarwashRemoteDataSource {
     String? searchField,
     String? searchValue,
     String? searchOperator,
+    String? empresaId,
   }) async {
     try {
       final queryParams = {
@@ -27,6 +28,7 @@ class CarwashRemoteDataSource {
         if (searchField != null && searchField.isNotEmpty) 'campo': searchField,
         if (searchValue != null && searchValue.isNotEmpty) 'valor': searchValue,
         if (searchOperator != null) 'operador': searchOperator,
+        if (empresaId != null && empresaId.isNotEmpty) 'empresa_id': empresaId,
       };
 
       final response = await _dioClient.instance.get(
@@ -50,6 +52,30 @@ class CarwashRemoteDataSource {
       return _handleDioException(e);
     } catch (e) {
       return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
+  /// Obtiene un solo documento por su ID desde la API.
+  Future<Either<Failure, Map<String, dynamic>?>> getDocumentById(
+    String collectionPath,
+    String docId,
+  ) async {
+    try {
+      final response = await _dioClient.instance.get(
+        '/carwaspro/$collectionPath/$docId',
+      );
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          return Right(data);
+        }
+        return const Right(null);
+      }
+      return const Right(null);
+    } on DioException {
+      return const Right(null);
+    } catch (_) {
+      return const Right(null);
     }
   }
 

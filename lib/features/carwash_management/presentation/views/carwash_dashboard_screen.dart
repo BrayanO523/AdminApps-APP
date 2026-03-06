@@ -55,13 +55,47 @@ class _CarwashDashboardScreenState
     super.dispose();
   }
 
+  /// Igual que en DynamicDataTable: detecta si un campo es un ID de referencia crudo.
+  static bool _isRawIdField(String key) {
+    final k = key.trim();
+    if (k.toLowerCase() == 'id') return true;
+    if (k.endsWith('Id') && k.length > 2) return true;
+    if (k.endsWith('_id') && k.length > 3) return true;
+    if (k.toLowerCase().startsWith('id_') && k.length > 3) return true;
+    if (k.endsWith('ID') && k.length > 2) return true;
+    // Empieza con 'Id' + mayúscula (IdSucursal, IdUsuario, IdEmpresa…)
+    if (k.length > 2 &&
+        k.startsWith('Id') &&
+        k[2] == k[2].toUpperCase() &&
+        k[2] != '_')
+      return true;
+    return false;
+  }
+
   void _clearFilters() {
     _searchController.clear();
     setState(() {
       _localSearchText = '';
       _selectedSearchField = null;
     });
-    ref.read(carwashDashboardProvider.notifier).applyFilter(null, null);
+    // Si hay una empresa seleccionada y no estamos en la sección de empresas,
+    // re-aplicar el filtro de empresaId en lugar de limpiar todo.
+    final state = ref.read(carwashDashboardProvider);
+    if (state.selectedEmpresas.isNotEmpty &&
+        state.activeSection != 'empresas') {
+      final empresasIdStr = state.selectedEmpresas
+          .map((e) => e['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .join(',');
+      ref
+          .read(carwashDashboardProvider.notifier)
+          .applyFilter(
+            'empresa_id',
+            empresasIdStr.isNotEmpty ? empresasIdStr : null,
+          );
+    } else {
+      ref.read(carwashDashboardProvider.notifier).applyFilter(null, null);
+    }
   }
 
   @override
@@ -75,10 +109,35 @@ class _CarwashDashboardScreenState
     ) {
       if (previous?.activeSection != next.activeSection) {
         _currentPage = 0;
+        _searchController.clear();
+        setState(() {
+          _localSearchText = '';
+          _selectedSearchField = null;
+        });
       }
     });
 
     final hasFilters = state.searchField != null && state.searchValue != null;
+    final isLocalFiltered = _localSearchText.isNotEmpty;
+    final filteredData = _applyLocalFilter(state.data);
+
+    final totalItemsCount = isLocalFiltered
+        ? filteredData.length
+        : (state.totalItems > 0 ? state.totalItems : filteredData.length);
+    final totalPagesCount = (totalItemsCount / _pageSize).ceil();
+
+    if (_currentPage >= totalPagesCount &&
+        totalPagesCount > 0 &&
+        !state.hasMore) {
+      if ((filteredData.length / _pageSize).ceil() <= _currentPage) {
+        _currentPage = (filteredData.length / _pageSize).ceil() - 1;
+        if (_currentPage < 0) _currentPage = 0;
+      }
+    }
+
+    final startIdx = _currentPage * _pageSize;
+    final paginatedData = filteredData.skip(startIdx).take(_pageSize).toList();
+    final endIdx = startIdx + paginatedData.length;
 
     final content = Column(
       children: [
@@ -117,9 +176,44 @@ class _CarwashDashboardScreenState
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14),
                             child: DynamicDataTable(
-                              data: _applyLocalFilter(state.data),
+                              data: paginatedData,
                               dashboardState: state,
                               activeFilters: const {},
+                              isContextSelected: (row) =>
+                                  state.selectedEmpresas.any(
+                                    (e) =>
+                                        e['id']?.toString() ==
+                                        row['id']?.toString(),
+                                  ),
+                              onSelectContext: state.activeSection == 'empresas'
+                                  ? (row) {
+                                      final isSelected = state.selectedEmpresas
+                                          .any(
+                                            (e) =>
+                                                e['id']?.toString() ==
+                                                row['id']?.toString(),
+                                          );
+                                      ref
+                                          .read(
+                                            carwashDashboardProvider.notifier,
+                                          )
+                                          .selectEmpresaContext(row);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            isSelected
+                                                ? 'Empresa ${row['nombre'] ?? row['name'] ?? ''} deseleccionada.'
+                                                : 'Empresa ${row['nombre'] ?? row['name'] ?? ''} seleccionada.',
+                                          ),
+                                          backgroundColor: isSelected
+                                              ? const Color(0xFFEF4444)
+                                              : const Color(0xFF10B981),
+                                        ),
+                                      );
+                                    }
+                                  : null,
                               onEdit: (row) => _showEditDialog(row),
                               onDelete: (row) => _showDeleteDialog(row),
                               onFilterToggle: (column, rawValue) {
@@ -131,12 +225,14 @@ class _CarwashDashboardScreenState
                           ),
                         ),
                       ),
-                      if (state.hasMore || state.data.length >= 20)
+                      if (state.hasMore ||
+                          state.data.length >= 20 ||
+                          totalPagesCount > 1)
                         _buildPaginationBar(
-                          state.totalItems,
-                          (state.totalItems / _pageSize).ceil(),
-                          0,
-                          state.data.length,
+                          totalItemsCount,
+                          totalPagesCount,
+                          startIdx,
+                          endIdx,
                           state.hasMore,
                           () {
                             ref
@@ -228,6 +324,59 @@ class _CarwashDashboardScreenState
               overflow: TextOverflow.ellipsis,
             ),
           ),
+        if (state.selectedEmpresas.isNotEmpty) ...[
+          SizedBox(width: isMobile ? 6 : 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF86EFAC)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.business_rounded,
+                  size: 14,
+                  color: Color(0xFF16A34A),
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    state.selectedEmpresas.length == 1
+                        ? (state.selectedEmpresas.first['nombre']?.toString() ??
+                              state.selectedEmpresas.first['name']
+                                  ?.toString() ??
+                              state.selectedEmpresas.first['razonSocial']
+                                  ?.toString() ??
+                              'Empresa')
+                        : '${state.selectedEmpresas.length} Empresas',
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      color: const Color(0xFF16A34A),
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () {
+                    ref
+                        .read(carwashDashboardProvider.notifier)
+                        .clearEmpresaContext();
+                  },
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 14,
+                    color: Color(0xFF16A34A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         SizedBox(width: isMobile ? 6 : 12),
         if (!state.isLoading && state.errorMessage == null)
           Container(
@@ -327,8 +476,40 @@ class _CarwashDashboardScreenState
                         for (final row in state.data) {
                           cols.addAll(row.keys);
                         }
-                        final list = cols.toList()..sort();
-                        list.remove('id');
+                        final list = cols
+                            .where((col) => !_isRawIdField(col))
+                            .toList();
+                        list.removeWhere(
+                          (col) => [
+                            'createdAt',
+                            'updatedAt',
+                            'created_at',
+                            'updated_at',
+                            'creadoEn',
+                            'actualizadoEn',
+                            'sync_status',
+                            'last_update_cloud',
+                            'lastUpdateCloud',
+                            'creado_offline',
+                            'creado_por',
+                            'fecha_creacion',
+                          ].contains(col),
+                        );
+                        list.sort((a, b) {
+                          final aLower = a.toLowerCase();
+                          final bLower = b.toLowerCase();
+                          final aIsName =
+                              aLower.contains('nombre') ||
+                              aLower == 'name' ||
+                              aLower.contains('razon');
+                          final bIsName =
+                              bLower.contains('nombre') ||
+                              bLower == 'name' ||
+                              bLower.contains('razon');
+                          if (aIsName && !bIsName) return -1;
+                          if (!aIsName && bIsName) return 1;
+                          return a.compareTo(b);
+                        });
                         if (_selectedSearchField != null &&
                             !list.contains(_selectedSearchField)) {
                           list.insert(0, _selectedSearchField!);
@@ -426,9 +607,26 @@ class _CarwashDashboardScreenState
     for (final row in state.data) {
       columnas.addAll(row.keys);
     }
-    final listaColumnas = columnas.toList()..sort();
-    // Quitar 'id' para dejarlo al final o excluirlo si se desea
+    // Excluir campos de ID y campos técnicos del filtro visible
+    final listaColumnas = columnas.where((col) => !_isRawIdField(col)).toList()
+      ..sort();
     listaColumnas.remove('id');
+    listaColumnas.removeWhere(
+      (col) => [
+        'createdAt',
+        'updatedAt',
+        'created_at',
+        'updated_at',
+        'creadoEn',
+        'actualizadoEn',
+        'sync_status',
+        'last_update_cloud',
+        'lastUpdateCloud',
+        'creado_offline',
+        'creado_por',
+        'fecha_creacion',
+      ].contains(col),
+    );
 
     final activeField = state.searchField;
     final activeValue = state.searchValue;
@@ -771,7 +969,9 @@ class _CarwashDashboardScreenState
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Mostrando ${start + 1}-$end de $totalItems',
+            start == end
+                ? 'Mostrando $end de $totalItems'
+                : 'Mostrando ${start + 1}-$end de $totalItems',
             style: GoogleFonts.outfit(
               fontSize: 13,
               color: const Color(0xFF64748B),
@@ -803,20 +1003,28 @@ class _CarwashDashboardScreenState
               ),
               _paginationBtn(
                 Icons.chevron_right_rounded,
-                _currentPage < totalPages - 1 || hasServerMore,
+                ((_currentPage + 1) * _pageSize) <
+                        ref.read(carwashDashboardProvider).data.length ||
+                    hasServerMore,
                 () {
-                  if (_currentPage < totalPages - 1) {
-                    setState(() => _currentPage++);
-                  } else if (hasServerMore) {
+                  final stateDataLength = ref
+                      .read(carwashDashboardProvider)
+                      .data
+                      .length;
+                  final nextStartIndex = (_currentPage + 1) * _pageSize;
+
+                  if (nextStartIndex >= stateDataLength && hasServerMore) {
                     onLoadMore();
+                  } else if (nextStartIndex < stateDataLength) {
+                    setState(() => _currentPage++);
                   }
                 },
               ),
               const SizedBox(width: 4),
               _paginationBtn(
                 Icons.last_page_rounded,
-                _currentPage < totalPages - 1 && !hasServerMore,
-                () => setState(() => _currentPage = totalPages - 1),
+                false, // Desactivado para evitar bloqueos si la API no reporta la longitud exacta localmente
+                () {},
               ),
             ],
           ),

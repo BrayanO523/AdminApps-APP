@@ -82,6 +82,8 @@ class DynamicDataTable extends StatefulWidget {
   final void Function(String column, String rawValue)? onFilterToggle;
   final void Function(Map<String, dynamic> row)? onEdit;
   final void Function(Map<String, dynamic> row)? onDelete;
+  final void Function(Map<String, dynamic> row)? onSelectContext;
+  final bool Function(Map<String, dynamic> row)? isContextSelected;
 
   const DynamicDataTable({
     super.key,
@@ -91,6 +93,8 @@ class DynamicDataTable extends StatefulWidget {
     this.onFilterToggle,
     this.onEdit,
     this.onDelete,
+    this.onSelectContext,
+    this.isContextSelected,
   });
 
   @override
@@ -113,12 +117,18 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
   }
 
   List<String> _getColumns() {
-    final hash = widget.data.length;
-    if (_cachedColumns != null && _lastDataHash == hash) {
+    // Generar un hash basado en las llaves del primer documento + la longitud
+    final firstRowKeys = widget.data.isNotEmpty
+        ? widget.data.first.keys.join(',')
+        : '';
+    final currentHash = Object.hash(widget.data.length, firstRowKeys);
+
+    if (_cachedColumns != null && _lastDataHash == currentHash) {
       return _cachedColumns!;
     }
+
     _cachedColumns = _extractColumns(widget.data);
-    _lastDataHash = hash;
+    _lastDataHash = currentHash;
     return _cachedColumns!;
   }
 
@@ -192,7 +202,9 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
                         bottom: BorderSide(color: Colors.grey.shade200),
                       ),
                       columns: [
-                        if (widget.onEdit != null || widget.onDelete != null)
+                        if (widget.onEdit != null ||
+                            widget.onDelete != null ||
+                            widget.onSelectContext != null)
                           DataColumn(
                             label: Text('ACCIONES', style: _Styles.header),
                           ),
@@ -247,6 +259,8 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
           idValue: row['id']?.toString(),
           onEdit: widget.onEdit,
           onDelete: widget.onDelete,
+          onSelectContext: widget.onSelectContext,
+          isContextSelected: widget.isContextSelected,
           buildCell: _buildCell,
           formatColumnName: _formatColumnName,
         );
@@ -283,11 +297,31 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
           return i.isEven ? Colors.white : const Color(0xFFFAFBFC);
         }),
         cells: [
-          if (widget.onEdit != null || widget.onDelete != null)
+          if (widget.onEdit != null ||
+              widget.onDelete != null ||
+              widget.onSelectContext != null)
             DataCell(
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (widget.onSelectContext != null) ...[
+                    Builder(
+                      builder: (context) {
+                        final isSelected =
+                            widget.isContextSelected?.call(row) ?? false;
+                        return IconButton(
+                          icon: Icon(Icons.check_circle_rounded, size: 20),
+                          color: isSelected
+                              ? const Color(0xFF10B981)
+                              : Colors.grey.shade400,
+                          tooltip: isSelected
+                              ? 'Contexto Seleccionado'
+                              : 'Seleccionar contexto',
+                          onPressed: () => widget.onSelectContext!(row),
+                        );
+                      },
+                    ),
+                  ],
                   if (widget.onEdit != null)
                     IconButton(
                       icon: const Icon(Icons.edit_rounded, size: 18),
@@ -321,11 +355,22 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
         : s;
   }
 
+  /// Mapeo de tipos de transacciones a etiquetas legibles.
+  static const _transactionTypes = {
+    'in_stock': 'Entrada',
+    'out_sale': 'Venta',
+    'out_damage': 'Merma',
+    'in_return': 'Devolución',
+    'transfer_in': 'Traslado Entrada',
+    'transfer_out': 'Traslado Salida',
+    'adjustment': 'Ajuste',
+    'initial': 'Inventario Inicial',
+  };
+
   Widget _buildCell(String field, dynamic value) {
     if (value == null) return Text('—', style: _Styles.cellMuted);
 
     if (value is Map) {
-      // Detectar Firestore Timestamp: {_seconds: ..., _nanoseconds: ...}
       if (value.containsKey('_seconds') && value.containsKey('_nanoseconds')) {
         return _timestampCell(value);
       }
@@ -335,6 +380,21 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
     if (value is bool) return _boolCell(value);
 
     final str = value.toString();
+    final fieldLower = field.toLowerCase();
+
+    // Indicador visual de Color (hex)
+    if (fieldLower == 'color' &&
+        (str.startsWith('0x') || str.startsWith('#'))) {
+      return _colorCell(str);
+    }
+
+    // Mapeo de tipo de transacción
+    if (fieldLower == 'type' || fieldLower == 'tipo') {
+      final label = _transactionTypes[str];
+      if (label != null) {
+        return Text(label, style: _Styles.cell);
+      }
+    }
 
     // ID resolvible → badge clickable
     if (widget.dashboardState.isResolvableField(field)) {
@@ -351,6 +411,37 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
     }
 
     return Text(str, style: _Styles.cell, softWrap: true);
+  }
+
+  /// Renderiza un indicador visual de color con el código hex.
+  Widget _colorCell(String hexStr) {
+    Color color;
+    try {
+      if (hexStr.startsWith('#')) {
+        final hex = hexStr.replaceFirst('#', '');
+        color = Color(int.parse('FF$hex', radix: 16));
+      } else {
+        color = Color(int.parse(hexStr));
+      }
+    } catch (_) {
+      return Text(hexStr, style: _Styles.cell);
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(hexStr, style: _Styles.cellMuted),
+      ],
+    );
   }
 
   Widget _imageCell(String url) {
@@ -1086,8 +1177,9 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
     );
   }
 
-  /// Columnas de metadatos ocultas.
+  /// Columnas técnicas ocultas — no se muestran en la tabla.
   static const _hiddenColumns = {
+    'id',
     'createdAt',
     'createdBy',
     'updatedAt',
@@ -1100,23 +1192,156 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
     'creadoPor',
     'actualizadoEn',
     'actualizadoPor',
+    'sync_status',
+    'last_update_cloud',
+    'lastUpdateCloud',
+    'inventory_id',
+    'id_venta',
+    'creado_offline',
+    'creado_por',
+    'fecha_creacion',
+    'last_updated_cloud',
+    // IDs de referencia interna (carwash)
+    'adminId',
+    'IdUsuario',
+    'IdSucursalesAsignadas',
+    'empresaId',
+    'empresa_id',
+    'sucursalId',
+    'clienteId',
+    'tipoLavadoId',
+    'categoriaId',
+    'CategoryId',
+    // IDs de referencia interna (EPD)
+    'companyId',
+    'branchId',
+    'branch_id',
+    'branch_origin_id',
+    'branch_destination_id',
+    'seller_id',
+    'user_id',
+    'product_id',
+    'supplier_id',
+    'category_id',
+    'categoryId',
+    'client_id',
   };
+
+  /// Mapeo de nombres técnicos de columna → etiquetas legibles en español.
+  static const _columnLabels = {
+    // Carwash
+    'empresaId': 'Empresa',
+    'empresa_id': 'Empresa',
+    'sucursalId': 'Sucursal',
+    'clienteId': 'Cliente',
+    'tipoLavadoId': 'Tipo de Lavado',
+    'categoriaId': 'Categoría',
+    'CodigoUsuario': 'Código Usuario',
+    'IdSucursalesAsignadas': 'Sucursales Asignadas',
+    'IdUsuario': 'ID Usuario',
+    'NombreCompleto': 'Nombre Completo',
+    'NombreCategoria': 'Categoría',
+    'OrdenVisual': 'Orden Visual',
+    'nombreComercial': 'Nombre Comercial',
+    'razonSocial': 'Razón Social',
+    'adminId': 'Administrador',
+    'activo': 'Activo',
+    // EPD
+    'companyId': 'Empresa',
+    'branchId': 'Sucursal',
+    'branch_id': 'Sucursal',
+    'branch_origin_id': 'Sucursal Origen',
+    'branch_destination_id': 'Sucursal Destino',
+    'seller_id': 'Vendedor',
+    'user_id': 'Usuario',
+    'product_id': 'Producto',
+    'product_name': 'Nombre Producto',
+    'supplier_id': 'Proveedor',
+    'supplier_name': 'Nombre Proveedor',
+    'category_id': 'Categoría',
+    'categoryId': 'Categoría',
+    'client_name': 'Nombre Cliente',
+    'client_id': 'Cliente',
+    'sale_date': 'Fecha de Venta',
+    'total_amount': 'Monto Total',
+    'payment_method': 'Método de Pago',
+    'quantity': 'Cantidad',
+    'unit_price': 'Precio Unitario',
+    'current_stock': 'Stock Actual',
+    'min_stock': 'Stock Mínimo',
+    'max_stock': 'Stock Máximo',
+    'transaction_date': 'Fecha Transacción',
+    'transfer_date': 'Fecha Traslado',
+    'waste_date': 'Fecha Merma',
+    'type': 'Tipo',
+    'reason': 'Motivo',
+    'notes': 'Notas',
+    'status': 'Estado',
+  };
+
+  /// Detecta si un campo es un ID de referencia puro (que no aporta al usuario final).
+  static bool _isRawIdField(String key) {
+    final k = key.trim();
+    // Exactamente 'id' (case-insensitive)
+    if (k.toLowerCase() == 'id') return true;
+    // Termina en 'Id' (camelCase: empresaId, sucursalId…)
+    if (k.endsWith('Id') && k.length > 2) return true;
+    // Termina en '_id' (snake_case: product_id, branch_id…)
+    if (k.endsWith('_id') && k.length > 3) return true;
+    // Empieza con 'id_' (id_venta, id_usuario…)
+    if (k.toLowerCase().startsWith('id_') && k.length > 3) return true;
+    // Todo en mayúsculas terminado en 'ID' (categoryID, productID…)
+    if (k.endsWith('ID') && k.length > 2) return true;
+    // Empieza con 'Id' + mayúscula (IdSucursal, IdUsuario, IdEmpresa…)
+    if (k.length > 2 &&
+        k.startsWith('Id') &&
+        k[2] == k[2].toUpperCase() &&
+        k[2] != '_')
+      return true;
+    return false;
+  }
 
   List<String> _extractColumns(List<Map<String, dynamic>> data) {
     final allKeys = <String>{};
     for (final row in data) {
       allKeys.addAll(row.keys);
     }
-    allKeys.removeAll(_hiddenColumns);
+    allKeys.removeWhere((key) {
+      final lowerKey = key.toLowerCase();
+      // Ocultar columnas explícitamente listadas
+      if (_hiddenColumns.any((hidden) => hidden.toLowerCase() == lowerKey)) {
+        return true;
+      }
+      // Ocultar automáticamente cualquier campo que sea un ID de referencia crudo
+      if (_isRawIdField(key)) return true;
+      return false;
+    });
     final sorted = allKeys.toList();
-    if (sorted.contains('id')) {
-      sorted.remove('id');
-      sorted.insert(0, 'id');
-    }
+
+    sorted.sort((a, b) {
+      final aLower = a.toLowerCase();
+      final bLower = b.toLowerCase();
+      final aIsName =
+          aLower.contains('nombre') ||
+          aLower == 'name' ||
+          aLower.contains('razon');
+      final bIsName =
+          bLower.contains('nombre') ||
+          bLower == 'name' ||
+          bLower.contains('razon');
+      if (aIsName && !bIsName) return -1;
+      if (!aIsName && bIsName) return 1;
+      return a.compareTo(b);
+    });
+
     return sorted;
   }
 
   String _formatColumnName(String key) {
+    // Primero buscar en el mapeo de etiquetas
+    final label = _columnLabels[key];
+    if (label != null) return label;
+    // Fallback: convertir camelCase/snake_case a título
     final result = key
         .replaceAll('_', ' ')
         .replaceAllMapped(RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}');
@@ -1133,6 +1358,8 @@ class _MobileCard extends StatefulWidget {
   final String? idValue;
   final void Function(Map<String, dynamic> row)? onEdit;
   final void Function(Map<String, dynamic> row)? onDelete;
+  final void Function(Map<String, dynamic> row)? onSelectContext;
+  final bool Function(Map<String, dynamic> row)? isContextSelected;
   final Widget Function(String field, dynamic value) buildCell;
   final String Function(String key) formatColumnName;
 
@@ -1144,6 +1371,8 @@ class _MobileCard extends StatefulWidget {
     this.idValue,
     this.onEdit,
     this.onDelete,
+    this.onSelectContext,
+    this.isContextSelected,
     required this.buildCell,
     required this.formatColumnName,
   });
@@ -1171,7 +1400,7 @@ class _MobileCardState extends State<_MobileCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header con ID y acciones ──
+          // ── Header con acciones (ID oculto al usuario final) ──
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -1182,26 +1411,32 @@ class _MobileCardState extends State<_MobileCard> {
             ),
             child: Row(
               children: [
-                if (widget.idValue != null) ...[
-                  Icon(
-                    Icons.tag_rounded,
-                    size: 14,
-                    color: Colors.grey.shade500,
+                const Spacer(),
+                if (widget.onSelectContext != null)
+                  Builder(
+                    builder: (context) {
+                      final isSelected =
+                          widget.isContextSelected?.call(widget.row) ?? false;
+                      return SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.check_circle_rounded,
+                            size: 16,
+                          ),
+                          color: isSelected
+                              ? const Color(0xFF10B981)
+                              : Colors.grey.shade400,
+                          padding: EdgeInsets.zero,
+                          tooltip: isSelected
+                              ? 'Contexto Seleccionado'
+                              : 'Seleccionar',
+                          onPressed: () => widget.onSelectContext!(widget.row),
+                        ),
+                      );
+                    },
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      widget.idValue!,
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ] else
-                  const Spacer(),
                 if (widget.onEdit != null)
                   SizedBox(
                     width: 32,

@@ -113,16 +113,4 @@ const List<EpdSection> epdSections = [
     collection: 'category_templates',
     icon: Icons.style_rounded,
   ),
-  EpdSection(
-    id: 'app_releases',
-    label: 'Releases App',
-    collection: 'app_releases',
-    icon: Icons.system_update_rounded,
-  ),
-  EpdSection(
-    id: 'empresa_device_versions',
-    label: 'Versiones Equipos',
-    collection: 'empresa_device_versions',
-    icon: Icons.devices_rounded,
-  ),
 ];

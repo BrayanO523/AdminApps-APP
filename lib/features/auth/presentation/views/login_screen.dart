@@ -135,125 +135,131 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
           // ── Card Glassmorphism ──
           Center(
-            child: FadeTransition(
-              opacity: _fadeIn,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: MediaQuery.sizeOf(context).width < 600 ? 20 : 0,
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(28),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: MediaQuery.sizeOf(context).width < 600
-                              ? 24
-                              : 40,
-                          vertical: 48,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            width: 1.5,
+            child: SingleChildScrollView(
+              child: FadeTransition(
+                opacity: _fadeIn,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: MediaQuery.sizeOf(context).width < 600
+                          ? 20
+                          : 0,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(28),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        child: Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: MediaQuery.sizeOf(context).width < 600
+                                ? 24
+                                : 40,
+                            vertical: 48,
                           ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Ícono
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.blueAccent.withValues(
-                                  alpha: 0.15,
-                                ),
-                              ),
-                              child: const Icon(
-                                Icons.admin_panel_settings_rounded,
-                                size: 48,
-                                color: Colors.white,
-                              ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              width: 1.5,
                             ),
-                            const SizedBox(height: 20),
-                            Text(
-                              'Acceso Centralizado',
-                              style: GoogleFonts.outfit(
-                                fontSize: 26,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'CarwashPro · EficentPostDynamic',
-                              style: GoogleFonts.outfit(
-                                fontSize: 13,
-                                color: Colors.white54,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                            const SizedBox(height: 36),
-
-                            // Email
-                            _buildField(
-                              controller: _emailController,
-                              hint: 'Correo electrónico',
-                              icon: Icons.email_outlined,
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Password
-                            _buildField(
-                              controller: _passwordController,
-                              hint: 'Contraseña',
-                              icon: Icons.lock_outline,
-                              isObscure: _isObscure,
-                              onToggle: () =>
-                                  setState(() => _isObscure = !_isObscure),
-                            ),
-                            const SizedBox(height: 32),
-
-                            // Button
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF3B82F6),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Ícono
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.blueAccent.withValues(
+                                    alpha: 0.15,
                                   ),
-                                  elevation: 0,
                                 ),
-                                onPressed: authState.isLoading ? null : _submit,
-                                child: authState.isLoading
-                                    ? const SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2.5,
-                                        ),
-                                      )
-                                    : Text(
-                                        'Ingresar',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
+                                child: const Icon(
+                                  Icons.admin_panel_settings_rounded,
+                                  size: 48,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 20),
+                              Text(
+                                'Acceso Centralizado',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'CarwashPro · EficentPostDynamic',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 13,
+                                  color: Colors.white54,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                              const SizedBox(height: 36),
+
+                              // Email
+                              _buildField(
+                                controller: _emailController,
+                                hint: 'Correo electrónico',
+                                icon: Icons.email_outlined,
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Password
+                              _buildField(
+                                controller: _passwordController,
+                                hint: 'Contraseña',
+                                icon: Icons.lock_outline,
+                                isObscure: _isObscure,
+                                onToggle: () =>
+                                    setState(() => _isObscure = !_isObscure),
+                              ),
+                              const SizedBox(height: 32),
+
+                              // Button
+                              SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF3B82F6),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: authState.isLoading
+                                      ? null
+                                      : _submit,
+                                  child: authState.isLoading
+                                      ? const SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5,
+                                          ),
+                                        )
+                                      : Text(
+                                          'Ingresar',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

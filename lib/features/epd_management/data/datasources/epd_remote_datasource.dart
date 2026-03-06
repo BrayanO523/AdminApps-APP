@@ -52,6 +52,30 @@ class EpdRemoteDataSource {
     }
   }
 
+  /// Obtiene un solo documento por su ID desde la API.
+  Future<Either<Failure, Map<String, dynamic>?>> getDocumentById(
+    String collectionPath,
+    String docId,
+  ) async {
+    try {
+      final response = await _dioClient.instance.get(
+        '/eficent/$collectionPath/$docId',
+      );
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          return Right(data);
+        }
+        return const Right(null);
+      }
+      return const Right(null);
+    } on DioException {
+      return const Right(null);
+    } catch (_) {
+      return const Right(null);
+    }
+  }
+
   /// Crea un nuevo documento en la colección.
   Future<Either<Failure, Map<String, dynamic>>> createDocument(
     String coleccion,
