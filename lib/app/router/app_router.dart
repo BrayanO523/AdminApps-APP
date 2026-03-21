@@ -6,6 +6,7 @@ import '../../features/auth/presentation/viewmodels/auth_viewmodel.dart';
 import '../../features/auth/presentation/views/login_screen.dart';
 import '../../features/epd_management/presentation/views/epd_dashboard_screen.dart';
 import '../../features/carwash_management/presentation/views/carwash_dashboard_screen.dart';
+import '../../features/qrecauda_management/presentation/views/qrecauda_dashboard_screen.dart';
 import '../../features/dashboard/presentation/views/dashboard_screen.dart';
 
 /// Listenable que se usa para refrescar GoRouter cuando cambia el auth state.
@@ -52,6 +53,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'eficent',
             builder: (context, state) => const EpdDashboardScreen(),
+          ),
+          GoRoute(
+            path: 'qrecauda',
+            builder: (context, state) => const QRecaudaDashboardScreen(),
           ),
         ],
       ),
