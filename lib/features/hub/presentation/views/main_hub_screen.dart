@@ -24,13 +24,26 @@ class MainHubScreen extends StatelessWidget {
           // Divisor
           Container(width: 1, color: Colors.white.withValues(alpha: 0.1)),
 
-          // Sección EficentPostDynamic (Derecha)
+          // Sección EficentPostDynamic (Centro)
           Expanded(
             child: _AnimatedHubSection(
               title: 'EficentPostDynamic',
               subtitle: 'Control Agrícola y Logística',
               primaryColor: const Color(0xFF10B981), // Verde esmeralda
               onTap: () => context.go('/dashboard/eficent'),
+            ),
+          ),
+
+          // Divisor
+          Container(width: 1, color: Colors.white.withValues(alpha: 0.1)),
+
+          // Sección QRecauda (Derecha)
+          Expanded(
+            child: _AnimatedHubSection(
+              title: 'QRecauda',
+              subtitle: 'Gestión Municipal',
+              primaryColor: const Color(0xFFD97706), // Ámbar
+              onTap: () => context.go('/dashboard/qrecauda'),
             ),
           ),
         ],
@@ -116,7 +129,7 @@ class _AnimatedHubSectionState extends State<_AnimatedHubSection> {
                       AnimatedDefaultTextStyle(
                         duration: const Duration(milliseconds: 300),
                         style: GoogleFonts.outfit(
-                          fontSize: _isHovered ? 52 : 46,
+                          fontSize: _isHovered ? 40 : 34,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                           letterSpacing: -1.0,
