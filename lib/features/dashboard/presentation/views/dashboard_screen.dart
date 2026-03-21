@@ -41,6 +41,18 @@ class DashboardScreen extends StatelessWidget {
                   isMobile: true,
                 ),
               ),
+              Container(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+              Expanded(
+                child: _DashboardHalf(
+                  title: 'QRecauda',
+                  subtitle: 'Gestión Municipal',
+                  baseColor: const Color(0xFFD97706),
+                  darkColor: const Color(0xFF92400E),
+                  icon: Icons.account_balance_rounded,
+                  onTap: () => context.go('/dashboard/qrecauda'),
+                  isMobile: true,
+                ),
+              ),
             ],
           ),
         ),
@@ -72,6 +84,18 @@ class DashboardScreen extends StatelessWidget {
               darkColor: const Color(0xFF064E3B),
               icon: Icons.pie_chart_rounded,
               onTap: () => context.go('/dashboard/eficent'),
+              isMobile: false,
+            ),
+          ),
+          Container(width: 1, color: Colors.white.withValues(alpha: 0.06)),
+          Expanded(
+            child: _DashboardHalf(
+              title: 'QRecauda',
+              subtitle: 'Gestión Municipal',
+              baseColor: const Color(0xFFD97706),
+              darkColor: const Color(0xFF92400E),
+              icon: Icons.account_balance_rounded,
+              onTap: () => context.go('/dashboard/qrecauda'),
               isMobile: false,
             ),
           ),
@@ -142,11 +166,15 @@ class _DashboardHalfState extends State<_DashboardHalf>
   Widget build(BuildContext context) {
     // En móvil: botón siempre visible, sin hover scale
     final showButton = widget.isMobile || _isHovered;
-    final iconSize = widget.isMobile ? 180.0 : 380.0;
-    final cardPadH = widget.isMobile ? 32.0 : 52.0;
-    final cardPadV = widget.isMobile ? 28.0 : 44.0;
-    final titleSize = widget.isMobile ? 26.0 : 34.0;
-    final iconInnerSize = widget.isMobile ? 40.0 : 56.0;
+
+    // Reducir un poco el tamaño interno porque ahora son 3 en vez de 2
+    final padHFactor = widget.isMobile ? 1.0 : 0.8;
+
+    final iconSize = widget.isMobile ? 180.0 : 320.0;
+    final cardPadH = (widget.isMobile ? 32.0 : 42.0) * padHFactor;
+    final cardPadV = widget.isMobile ? 28.0 : 36.0;
+    final titleSize = widget.isMobile ? 26.0 : 28.0;
+    final iconInnerSize = widget.isMobile ? 40.0 : 48.0;
 
     return MouseRegion(
       onEnter: (_) => _onHover(true),
