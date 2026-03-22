@@ -21,6 +21,9 @@ dependencies:
   equatable: ^2.0.8
   google_fonts: ^6.2.1
   firebase_app_check: ^0.4.1+5
+  dropdown_search: ^6.0.2
+  image_picker: ^1.2.1
+  firebase_storage: ^13.1.0
 
 dev_dependencies:
   flutter_test:

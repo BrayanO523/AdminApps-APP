@@ -6,8 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/qrecauda_section.dart';
 import '../viewmodels/qrecauda_dashboard_viewmodel.dart';
 import '../widgets/qrecauda_sidebar.dart';
-import '../../../carwash_management/presentation/widgets/dynamic_data_table.dart';
-import '../../../carwash_management/presentation/widgets/dynamic_form_dialog.dart';
+import '../../../shared/presentation/widgets/dynamic_data_table.dart';
+import '../../../shared/presentation/widgets/dynamic_form_dialog.dart';
 
 class QRecaudaDashboardScreen extends ConsumerStatefulWidget {
   const QRecaudaDashboardScreen({super.key});

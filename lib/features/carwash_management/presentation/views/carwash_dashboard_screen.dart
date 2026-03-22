@@ -6,8 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/carwash_section.dart';
 import '../viewmodels/carwash_dashboard_viewmodel.dart';
 import '../widgets/carwash_sidebar.dart';
-import '../widgets/dynamic_data_table.dart';
-import '../widgets/dynamic_form_dialog.dart';
+import '../../../shared/presentation/widgets/dynamic_data_table.dart';
+import '../../../shared/presentation/widgets/dynamic_form_dialog.dart';
 
 class CarwashDashboardScreen extends ConsumerStatefulWidget {
   const CarwashDashboardScreen({super.key});
