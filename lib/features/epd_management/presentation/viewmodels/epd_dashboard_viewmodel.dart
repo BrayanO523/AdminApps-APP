@@ -86,6 +86,32 @@ class EpdDashboardState implements ResolvableState {
         .label;
   }
 
+  /// Devuelve una lista de opciones formateadas para Dropdowns `[{'value': ID, 'label': Nombre}]`
+  List<Map<String, dynamic>> getDropdownOptions(String section) {
+    Map<String, String> targetMap;
+    switch (section) {
+      case 'companies':
+        targetMap = empresaNames;
+        break;
+      case 'branches':
+        targetMap = sucursalNames;
+        break;
+      case 'users':
+        targetMap = usuarioNames;
+        break;
+      case 'categories':
+        targetMap = categoriaNames;
+        break;
+      default:
+        return [];
+    }
+    final options = targetMap.entries
+        .map((e) => {'value': e.key, 'label': e.value})
+        .toList();
+    options.sort((a, b) => a['label'].toString().compareTo(b['label'].toString()));
+    return options;
+  }
+
   /// Resuelve un ID a un nombre legible según el campo.
   @override
   String resolveId(String fieldName, String rawValue) {
@@ -585,6 +611,26 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         return failure.message;
       },
       (_) async {
+        await selectSection(state.activeSection);
+        return null;
+      },
+    );
+  }
+
+  /// Realiza un ajuste atómico de inventario usando el endpoint /inventario-ajuste.
+  /// El [data] debe contener los campos requeridos por el endpoint:
+  /// IdProducto, IdSucursal, IdEmpresa, cantidad, motivo, [observacion].
+  Future<String?> adjustInventory(Map<String, dynamic> data) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final result = await _dataSource.adjustInventory(data);
+    return result.fold(
+      (failure) {
+        state = state.copyWith(isLoading: false, errorMessage: failure.message);
+        return failure.message;
+      },
+      (_) async {
+        // Recargar inventory e inventory_transactions tras el ajuste
         await selectSection(state.activeSection);
         return null;
       },

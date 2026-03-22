@@ -119,6 +119,28 @@ class EpdRemoteDataSource {
     }
   }
 
+  /// Realiza un ajuste atómico de inventario (stock + auditoría en una sola operación).
+  /// El [payload] debe incluir: IdProducto, IdSucursal, IdEmpresa, cantidad (positivo o negativo),
+  /// motivo, [observacion] opcional, y los IDs del usuario que hace el ajuste.
+  Future<Either<Failure, Map<String, dynamic>>> adjustInventory(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/inventario-ajuste',
+        data: payload,
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Right(response.data as Map<String, dynamic>);
+      }
+      return const Left(ServerFailure('Respuesta inesperada al ajustar inventario.'));
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (e) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
   /// Elimina por completo un documento.
   Future<Either<Failure, void>> deleteDocument(
     String coleccion,

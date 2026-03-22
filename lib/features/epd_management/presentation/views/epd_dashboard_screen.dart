@@ -6,8 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/epd_section.dart';
 import '../viewmodels/epd_dashboard_viewmodel.dart';
 import '../widgets/epd_sidebar.dart';
-import '../../../carwash_management/presentation/widgets/dynamic_data_table.dart';
-import '../../../carwash_management/presentation/widgets/dynamic_form_dialog.dart';
+import '../../../shared/presentation/widgets/dynamic_data_table.dart';
+import '../../../shared/presentation/widgets/dynamic_form_dialog.dart';
+import '../../../shared/presentation/widgets/dynamic_form_field_schema.dart';
 
 class EpdDashboardScreen extends ConsumerStatefulWidget {
   const EpdDashboardScreen({super.key});
@@ -200,6 +201,13 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                                       );
                                     }
                                   : null,
+                              // Botón extra para ajuste atómico de stock
+                              onExtraAction: state.activeSection == 'inventory'
+                                  ? (row) => _showInventoryAdjustDialog(row)
+                                  : null,
+                              extraActionIcon: Icons.swap_vert_circle_rounded,
+                              extraActionColor: const Color(0xFF059669),
+                              extraActionTooltip: 'Ajustar Stock',
                               onEdit: (row) => _showEditDialog(row),
                               onDelete: (row) => _showDeleteDialog(row),
                               onFilterToggle: (column, rawValue) {
@@ -776,25 +784,362 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     );
   }
 
+  Map<String, DynamicFormFieldSchema> _buildFieldSchemas(EpdDashboardState state) {
+    switch (state.activeSection) {
+      // ── Sucursales ────────────────────────────────────────────────────────
+      case 'branches':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'allowed_categories': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.multiselectDropdown,
+            options: state.getDropdownOptions('categories'),
+            label: 'Categorías Permitidas',
+          ),
+        };
+
+      // ── Usuarios ──────────────────────────────────────────────────────────
+      case 'users':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa Activa',
+          ),
+          'rol': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': 'VENDEDOR', 'label': 'Vendedor'},
+              {'value': 'ADMIN', 'label': 'Administrador'},
+            ],
+            label: 'Rol',
+          ),
+          'IdSucursalesAsignadas': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('branches'),
+            label: 'Sucursales Asignadas',
+          ),
+        };
+
+      // ── Categorías ────────────────────────────────────────────────────────
+      case 'categories':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'color': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.colorPicker,
+            label: 'Color de Categoría',
+          ),
+        };
+
+      // ── Productos ─────────────────────────────────────────────────────────
+      case 'products':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'IdCategoria': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('categories'),
+            label: 'Categoría',
+          ),
+          'fotoUrl': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Foto del Producto',
+          ),
+          'ModoVventa': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': 'UNIDAD', 'label': 'Por Unidad'},
+              {'value': 'LB', 'label': 'Por Libra'},
+              {'value': 'AMBOS', 'label': 'Ambos'},
+            ],
+            label: 'Modo de Venta',
+          ),
+          'is_promo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '0', 'label': 'No es Promoción'},
+              {'value': '1', 'label': 'Sí es Promoción'},
+            ],
+            label: '¿En Promoción?',
+          ),
+        };
+
+      // ── Combos ────────────────────────────────────────────────────────────
+      case 'combos':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'sucursales_asignadas': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.multiselectDropdown,
+            options: state.getDropdownOptions('branches'),
+            label: 'Sucursales Disponibles',
+          ),
+          'fotoUrl': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Foto del Combo',
+          ),
+        };
+
+      // ── Clientes ──────────────────────────────────────────────────────────
+      case 'clients':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+        };
+
+      // ── Proveedores ───────────────────────────────────────────────────────
+      case 'suppliers':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'esGlobal': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '0', 'label': 'Proveedor Local'},
+              {'value': '1', 'label': 'Proveedor Global'},
+            ],
+            label: '¿Alcance del Proveedor?',
+          ),
+        };
+
+      // ── Asignaciones de Proveedores ───────────────────────────────────────
+      case 'supplier_assignments':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'IdSucursal': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            options: state.getDropdownOptions('branches'),
+            label: 'Sucursal',
+          ),
+        };
+
+      default:
+        return {};
+    }
+  } // fin de _buildFieldSchemas
+
+  // ── Lista global de campos de sistema que el admin NUNCA debe ver ni tocar ──
+  static const _hiddenSystemFields = [
+    // SQLite offline-only
+    'creado_offline', 'modificado_offline', 'SYNC_STATUS',
+    // Timestamps gestionados por el backend
+    'last_modified', 'last_updated_cloud', 'fechacreacion',
+    'fecha_creacion_registro',
+    // Auditoría interna
+    'creado_por', 'modificado_por', 'idusuario', 'Idvendedor',
+    // Banderas y contadores internos del motor móvil
+    'activo', 'Activo', 'estado', 'Favorito', 'OrdenFavorito',
+    'contador_ventas', 'isTemplate', 'source_template_id',
+    'sync_status', 'control_inventario', 'clientes_enabled',
+    'pesos_rapidos_enabled', 'adminId',
+    // IDs canónicos autogenerados por el backend al crear
+    'IdProducto', 'IdCategoria', 'IdCombo', 'IdInventario',
+    'IdTransaccion', 'IdVenta', 'IdCliente', 'IdUsuario',
+    // Autogenerados (no debe llenar el admin)
+    'CodigoSucursal',
+    // Campos de usuario que no aplican en el formulario
+    'selected_categories',
+    // Legacy ID (se rellena automáticamente en backend desde IdSucursalesAsignadas)
+    'IdSucursal',
+  ];
+
+  /// Devuelve los campos base requeridos por cada colección, para que el formulario
+  /// de creación funcione aunque la tabla esté completamente vacía.
+  Map<String, dynamic> _getBaseFieldsForSection(String section) {
+    switch (section) {
+      // ── Empresas ──────────────────────────────────────────────────────────
+      case 'companies':
+        return {
+          'nombreComercial': '',
+          'razonSocial': '',
+          'rtn': '',
+          'telefono': '',
+          'correo': '',
+          'logoUrl': '',
+          'direccion': '',
+          'adminId': '',
+          'activo': 1,
+        };
+
+      // ── Sucursales (CodigoSucursal autogenerado por backend) ─────────────
+      case 'branches':
+        return {
+          'Nombre': '',
+          'direccion_referencia': '',
+          'telefono_contacto': '',
+          'empresaId': '',
+          'adminId': '',
+          'allowed_categories': '[]',
+          'control_inventario': 1,
+          'clientes_enabled': 1,
+          'pesos_rapidos_enabled': 0,
+          'sync_status': 1,
+          'activo': 1,
+        };
+
+      // ── Usuarios ──────────────────────────────────────────────────────────
+      case 'users':
+        return {
+          'NombreCompleto': '',
+          'CodigoUsuario': '',
+          'pin': '',
+          'rol': 'VENDEDOR',
+          'empresaId': '',
+          // IdSucursal y selected_categories están en _hiddenSystemFields;
+          // el backend rellena IdSucursal desde IdSucursalesAsignadas[0].
+          'IdSucursal': '',
+          'IdSucursalesAsignadas': '[]',
+          'selected_categories': '[]',
+          'activo': 1,
+        };
+
+      // ── Clientes ──────────────────────────────────────────────────────────
+      case 'clients':
+        return {
+          'NombreCompleto': '',
+          'RTN': '',
+          'Movil': '',
+          'telefono': '',
+          'correo': '',
+          'direccion': '',
+          'empresaId': '',
+          'adminId': '',
+          'activo': 1,
+          'sync_status': 1,
+        };
+
+      // ── Categorías ────────────────────────────────────────────────────────
+      case 'categories':
+        return {
+          'NombreCategoria': '',
+          'descripcion': '',
+          'color': '#3498DB',
+          'empresaId': '',
+          'activo': 1,
+        };
+
+      // ── Productos ─────────────────────────────────────────────────────────
+      case 'products':
+        return {
+          'NombreProducto': '',
+          'descripcion': '',
+          'fotoUrl': '',
+          'preciounidad': 0.0,
+          'precioLibra': 0.0,
+          'ModoVventa': 'UNIDAD',
+          'is_promo': 0,
+          'promo_price': 0.0,
+          'promo_price_lb': 0.0,
+          'costo': 0.0,
+          'IdCategoria': '',
+          'empresaId': '',
+          // Campos del motor móvil (ocultos, valores por defecto)
+          'Favorito': 0,
+          'OrdenFavorito': 0,
+          'contador_ventas': 0,
+          'Activo': 1,
+          'sync_status': 1,
+        };
+
+      // ── Combos ────────────────────────────────────────────────────────────
+      case 'combos':
+        return {
+          'NombreCombo': '',
+          'descripcion': '',
+          'precio': 0.0,
+          'fotoUrl': '',
+          'sucursales_asignadas': '[]',
+          'empresaId': '',
+          'activo': 1,
+          'sync_status': 1,
+        };
+
+      // ── Proveedores ───────────────────────────────────────────────────────
+      case 'suppliers':
+        return {
+          'nombre': '',
+          'telefono': '',
+          'email': '',
+          'direccion': '',
+          'notas': '',
+          'empresaId': '',
+          'esGlobal': 0,
+          'activo': 1,
+        };
+
+      // ── Asignaciones de Proveedores ───────────────────────────────────────
+      case 'supplier_assignments':
+        return {
+          'IdProveedor': '',
+          'IdSucursal': '',
+          'motivo': '',
+          'empresaId': '',
+          'activo': 1,
+        };
+
+      // Inventario, ventas, mermas, traslados → Solo lectura
+      case 'inventory':
+      case 'inventory_transactions':
+      case 'inventory_transfers':
+      case 'sales':
+      case 'waste_reports':
+      case 'catalog_templates':
+      case 'category_templates':
+        return {}; // Sin formulario de creación
+
+      default:
+        return {};
+    }
+  }
+
   Future<void> _showCreateDialog(EpdDashboardState state) async {
-    // Tomamos la primera fila como plantilla si existe, si no, mapa vacío
-    final template = state.data.isNotEmpty
-        ? state.data.first
-        : <String, dynamic>{};
-    final initialData = <String, dynamic>{};
-    for (final key in template.keys) {
-      if (key == 'id') continue;
-      // Solo inferir nulos para primitivas
-      if (template[key] is int) {
-        initialData[key] = 0;
-      } else if (template[key] is double) {
-        initialData[key] = 0.0;
-      } else if (template[key] is bool) {
-        initialData[key] = false;
-      } else if (template[key] is String) {
-        initialData[key] = '';
+    // Plantilla base por sección (robusta, no depende de state.data.first)
+    final initialData = _getBaseFieldsForSection(state.activeSection);
+
+    // Inyectar automáticamente el contexto activo (empresa seleccionada, filtros de búsqueda)
+    final contextHidden = <String>[];
+
+    // Si hay una sola empresa seleccionada, se inyecta como empresaId
+    if (state.selectedEmpresas.length == 1) {
+      final empresaId = state.selectedEmpresas.first['value']?.toString()
+          ?? state.selectedEmpresas.first['id']?.toString() ?? '';
+      if (empresaId.isNotEmpty) {
+        initialData['empresaId'] = empresaId;
+        contextHidden.add('empresaId');
       }
     }
+
+    // Si hay un filtro de búsqueda activo, también se inyecta y oculta
+    if (state.searchField != null && state.searchValue != null && state.searchValue!.isNotEmpty) {
+      initialData[state.searchField!] = state.searchValue!;
+      contextHidden.add(state.searchField!);
+    }
+
+    // Lista combinada de ocultos: sistema + contexto ya inyectado
+    final hiddenFields = [..._hiddenSystemFields, ...contextHidden];
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -803,6 +1148,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         initialData: initialData,
         isEdit: false,
         title: 'Crear en ${state.activeSectionLabel}',
+        fieldSchemas: _buildFieldSchemas(state),
+        hiddenFields: hiddenFields,
       ),
     );
 
@@ -828,6 +1175,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   }
 
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
+    final state = ref.read(epdDashboardProvider);
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
@@ -835,6 +1183,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         initialData: row,
         isEdit: true,
         title: 'Editar Documento',
+        fieldSchemas: _buildFieldSchemas(state),
+        hiddenFields: _hiddenSystemFields,
       ),
     );
 
@@ -921,6 +1271,320 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             const SnackBar(
               content: Text('Documento eliminado'),
               backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Diálogo para ajuste atómico de stock de inventario.
+  /// Llama al endpoint POST /inventario-ajuste que en un Batch:
+  ///   1) Actualiza el campo `stock` del documento en `inventory`
+  ///   2) Crea un registro de auditoría en `inventory_transactions`
+  Future<void> _showInventoryAdjustDialog(Map<String, dynamic> row) async {
+    final cantidadCtrl = TextEditingController();
+    final motivoCtrl = TextEditingController();
+    final observacionCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final productoId = row['IdProducto']?.toString() ??
+        row['idProducto']?.toString() ??
+        row['id']?.toString() ??
+        '';
+    final sucursalId = row['IdSucursal']?.toString() ??
+        row['idSucursal']?.toString() ??
+        '';
+    final empresaId = row['IdEmpresa']?.toString() ??
+        row['idEmpresa']?.toString() ??
+        row['empresaId']?.toString() ??
+        '';
+    final nombreProducto = row['nombre']?.toString() ??
+        row['name']?.toString() ??
+        productoId;
+    final stockActual = row['stock']?.toString() ?? '?';
+
+    final confirm = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: 460,
+          padding: const EdgeInsets.all(28),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1FAE5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.swap_vert_circle_rounded,
+                        color: Color(0xFF059669),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Ajustar Stock',
+                            style: GoogleFonts.outfit(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            '$nombreProducto • Stock actual: $stockActual',
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Cantidad
+                Text(
+                  'CANTIDAD (positiva = entrada, negativa = salida)',
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: cantidadCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    signed: true,
+                    decimal: true,
+                  ),
+                  style: GoogleFonts.outfit(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Ej: 10 o -5',
+                    hintStyle: GoogleFonts.outfit(
+                      color: const Color(0xFF94A3B8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF059669),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Ingresa la cantidad';
+                    }
+                    if (double.tryParse(v.trim()) == null) {
+                      return 'Debe ser un número válido';
+                    }
+                    if (double.parse(v.trim()) == 0) {
+                      return 'La cantidad no puede ser cero';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Motivo
+                Text(
+                  'MOTIVO',
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: motivoCtrl,
+                  style: GoogleFonts.outfit(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Ej: Compra, Merma, Ajuste inicial...',
+                    hintStyle: GoogleFonts.outfit(
+                      color: const Color(0xFF94A3B8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF059669),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Ingresa el motivo del ajuste';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Observación (opcional)
+                Text(
+                  'OBSERVACIÓN (opcional)',
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: observacionCtrl,
+                  style: GoogleFonts.outfit(fontSize: 14),
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Detalle adicional...',
+                    hintStyle: GoogleFonts.outfit(
+                      color: const Color(0xFF94A3B8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF059669),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Acciones
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(
+                        'Cancelar',
+                        style: GoogleFonts.outfit(
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.check_rounded, size: 18),
+                      label: Text(
+                        'Aplicar Ajuste',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () {
+                        if (formKey.currentState!.validate()) {
+                          Navigator.pop(ctx, {
+                            'IdProducto': productoId,
+                            'IdSucursal': sucursalId,
+                            'IdEmpresa': empresaId,
+                            'cantidad': double.parse(
+                              cantidadCtrl.text.trim(),
+                            ),
+                            'motivo': motivoCtrl.text.trim(),
+                            'observacion': observacionCtrl.text.trim(),
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    cantidadCtrl.dispose();
+    motivoCtrl.dispose();
+    observacionCtrl.dispose();
+
+    if (confirm != null && mounted) {
+      final error = await ref
+          .read(epdDashboardProvider.notifier)
+          .adjustInventory(confirm);
+      if (mounted) {
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ajuste de inventario aplicado con éxito'),
+              backgroundColor: Color(0xFF059669),
             ),
           );
         }
