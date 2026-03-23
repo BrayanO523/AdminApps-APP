@@ -1,7 +1,12 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/di/network_provider.dart';
 
 import '../../domain/entities/epd_section.dart';
 import '../viewmodels/epd_dashboard_viewmodel.dart';
@@ -23,6 +28,46 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   String _localSearchText = '';
   static const int _pageSize = 20;
   int _currentPage = 0;
+
+  Future<String> _uploadImageToStorage(
+    List<int> bytes,
+    String storagePath,
+  ) async {
+    try {
+      final response = await ref
+          .read(dioClientProvider)
+          .instance
+          .post(
+            '/eficent/upload-image',
+            data: {
+              'imageBase64': base64Encode(bytes),
+              'storagePath': storagePath,
+            },
+          )
+          .timeout(const Duration(seconds: 90));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        final url = (data is Map<String, dynamic>)
+            ? data['downloadUrl']?.toString()
+            : null;
+        if (url != null && url.isNotEmpty) return url;
+      }
+
+      throw Exception('La API no devolvió una URL válida de imagen.');
+    } on TimeoutException {
+      throw Exception(
+        'Timeout subiendo imagen por API. Verifica conectividad y estado del servidor.',
+      );
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      final data = e.response?.data;
+      final apiMessage = (data is Map ? data['error']?.toString() : null);
+      throw Exception(
+        'Error de API al subir imagen (${status ?? "sin status"}): ${apiMessage ?? e.message ?? "sin detalle"}',
+      );
+    }
+  }
 
   /// Filtra los datos localmente por texto (case-insensitive contains).
   List<Map<String, dynamic>> _applyLocalFilter(
@@ -1072,7 +1117,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'telefono_contacto': '',
           'empresaId': '',
           'adminId': '',
-          'allowed_categories': '[]',
+          'allowed_categories': <String>[],
           'control_inventario': 1,
           'clientes_enabled': 1,
           'pesos_rapidos_enabled': 0,
@@ -1251,6 +1296,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         title: 'Crear en ${state.activeSectionLabel}',
         fieldSchemas: _buildFieldSchemas(state),
         hiddenFields: hiddenFields,
+        onUploadImage: _uploadImageToStorage,
       ),
     );
 
@@ -1286,6 +1332,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         title: 'Editar Documento',
         fieldSchemas: _buildFieldSchemas(state),
         hiddenFields: _hiddenSystemFields,
+        onUploadImage: _uploadImageToStorage,
       ),
     );
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 
 <head>
@@ -31,7 +31,12 @@
   <link rel="icon" type="image/png" href="favicon.png" />
 
   <title>admincarwashepd</title>
-  <script src="https://www.google.com/recaptcha/enterprise.js?render=6LfIPn0sAAAAAFWocbrWw45vJK51l0006z_DEkf5"></script>
+  <script>
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+  </script>
+  <script src="https://www.google.com/recaptcha/api.js?render=6LfIPn0sAAAAAFWocbrWw45vJK51l0006z_DEkf5"></script>
   <link rel="manifest" href="manifest.json">
 </head>
 
