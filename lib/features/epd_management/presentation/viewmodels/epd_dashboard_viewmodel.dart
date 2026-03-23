@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/di/network_provider.dart';
@@ -6,7 +6,7 @@ import '../../../../core/utils/resolvable_state.dart';
 import '../../data/datasources/epd_remote_datasource.dart';
 import '../../domain/entities/epd_section.dart';
 
-// â”€â”€ Estado â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Estado Ã¢â€â‚¬Ã¢â€â‚¬
 class EpdDashboardState implements ResolvableState {
   final String activeSection;
   final bool isLoading;
@@ -16,8 +16,9 @@ class EpdDashboardState implements ResolvableState {
   final int totalItems;
   final String? searchField;
   final String? searchValue;
+  final String? searchOperator;
 
-  /// Mapas de resoluciÃ³n: ID â†’ nombre legible
+  /// Mapas de resoluciÃƒÂ³n: ID Ã¢â€ â€™ nombre legible
   final Map<String, String> empresaNames;
   final Map<String, String> sucursalNames;
   final Map<String, String> usuarioNames;
@@ -41,6 +42,7 @@ class EpdDashboardState implements ResolvableState {
     this.totalItems = 0,
     this.searchField,
     this.searchValue,
+    this.searchOperator,
     this.empresaNames = const {},
     this.sucursalNames = const {},
     this.usuarioNames = const {},
@@ -62,6 +64,7 @@ class EpdDashboardState implements ResolvableState {
     int? totalItems,
     String? searchField,
     String? searchValue,
+    String? searchOperator,
     Map<String, String>? empresaNames,
     Map<String, String>? sucursalNames,
     Map<String, String>? usuarioNames,
@@ -85,6 +88,9 @@ class EpdDashboardState implements ResolvableState {
       totalItems: totalItems ?? this.totalItems,
       searchField: clearSearch ? null : (searchField ?? this.searchField),
       searchValue: clearSearch ? null : (searchValue ?? this.searchValue),
+      searchOperator: clearSearch
+          ? null
+          : (searchOperator ?? this.searchOperator),
       empresaNames: empresaNames ?? this.empresaNames,
       sucursalNames: sucursalNames ?? this.sucursalNames,
       usuarioNames: usuarioNames ?? this.usuarioNames,
@@ -129,7 +135,7 @@ class EpdDashboardState implements ResolvableState {
         return options;
 
       case 'categories':
-        // Filtrar por empresa si hay selecciÃ³n activa
+        // Filtrar por empresa si hay selecciÃƒÂ³n activa
         final docs = selectedIds.isEmpty
             ? cachedCategories
             : cachedCategories.where((d) {
@@ -163,12 +169,17 @@ class EpdDashboardState implements ResolvableState {
                 final empId = d['empresaId']?.toString() ?? '';
                 return selectedIds.contains(empId);
               }).toList();
-        final options = docs.map((d) {
-          final id = (d['IdProducto'] ?? d['id'] ?? '').toString().trim();
-          final name = _extractDocName(d) ?? id;
-          return {'value': id, 'label': name};
-        }).where((o) => o['value']!.isNotEmpty).toList();
-        options.sort((a, b) => a['label'].toString().compareTo(b['label'].toString()));
+        final options = docs
+            .map((d) {
+              final id = (d['IdProducto'] ?? d['id'] ?? '').toString().trim();
+              final name = _extractDocName(d) ?? id;
+              return {'value': id, 'label': name};
+            })
+            .where((o) => o['value']!.isNotEmpty)
+            .toList();
+        options.sort(
+          (a, b) => a['label'].toString().compareTo(b['label'].toString()),
+        );
         return options;
 
       default:
@@ -217,7 +228,7 @@ class EpdDashboardState implements ResolvableState {
     return null;
   }
 
-  /// Resuelve un ID a un nombre legible segÃºn el campo.
+  /// Resuelve un ID a un nombre legible segÃƒÂºn el campo.
   @override
   String resolveId(String fieldName, String rawValue) {
     final lower = fieldName.toLowerCase();
@@ -238,9 +249,9 @@ class EpdDashboardState implements ResolvableState {
       return usuarioNames[cleanValue] ?? rawValue;
     }
     if (lower.contains('categoria') ||
-        lower.contains('categorÃ­a') ||
+        lower.contains('categorÃƒÂ­a') ||
         lower.contains('categor') ||
-        lower.contains('categorÃ­es') ||
+        lower.contains('categorÃƒÂ­es') ||
         lower.contains('category') ||
         lower.contains('categories')) {
       return categoriaNames[cleanValue] ?? rawValue;
@@ -268,7 +279,7 @@ class EpdDashboardState implements ResolvableState {
         lower.contains('modificado') ||
         lower.contains('admin') ||
         lower.contains('categoria') ||
-        lower.contains('categorÃ­a') ||
+        lower.contains('categorÃƒÂ­a') ||
         lower.contains('categor') ||
         lower.contains('category') ||
         lower.contains('categories') ||
@@ -278,7 +289,7 @@ class EpdDashboardState implements ResolvableState {
   }
 }
 
-// â”€â”€ ViewModel â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ ViewModel Ã¢â€â‚¬Ã¢â€â‚¬
 class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
   final EpdRemoteDataSource _dataSource;
 
@@ -286,7 +297,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     _loadDependencies();
   }
 
-  /// Carga dependencias globales (empresas, sucursales, categorÃ­as) para los dropdowns.
+  /// Carga dependencias globales (empresas, sucursales, categorÃƒÂ­as) para los dropdowns.
   Future<void> _loadDependencies() async {
     final Map<String, String> newEmpresas = Map.from(state.empresaNames);
     final List<Map<String, dynamic>> newCachedBranches = [];
@@ -393,7 +404,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     return null;
   }
 
-  /// Detecta a quÃ© colecciÃ³n pertenece un campo basÃ¡ndose en su nombre.
+  /// Detecta a quÃƒÂ© colecciÃƒÂ³n pertenece un campo basÃƒÂ¡ndose en su nombre.
   String? _detectCollection(String fieldNameLower) {
     if (fieldNameLower.contains('uid') ||
         fieldNameLower.contains('creado') ||
@@ -562,7 +573,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     }
   }
 
-  /// Toggle de empresa para multiselecciÃ³n.
+  /// Toggle de empresa para multiselecciÃƒÂ³n.
   void selectEmpresaContext(Map<String, dynamic> empresa) {
     final current = List<Map<String, dynamic>>.from(state.selectedEmpresas);
     final id = empresa['id']?.toString();
@@ -580,15 +591,51 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     state = state.copyWith(clearEmpresas: true, clearError: true);
   }
 
-  /// Cambia la secciÃ³n activa y carga los datos.
+  String? _getEmpresaContextParam(String sectionId) {
+    if (sectionId == 'companies') return null;
+
+    final ids = state.selectedEmpresas
+        .map((e) => e['id']?.toString() ?? e['value']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return null;
+    return ids.join(',');
+  }
+
+  String? _inferOperator({
+    required String? field,
+    required String? value,
+    required String? explicitOperator,
+  }) {
+    if (explicitOperator != null && explicitOperator.trim().isNotEmpty) {
+      return explicitOperator.trim();
+    }
+    if (field == null || field.isEmpty || value == null || value.isEmpty) {
+      return null;
+    }
+    for (final row in state.data) {
+      if (row[field] != null) {
+        if (row[field] is Iterable) {
+          return 'array-contains';
+        }
+        break;
+      }
+    }
+    return '==';
+  }
+
+  /// Cambia la sección activa y carga los datos.
   Future<void> selectSection(String sectionId) async {
     final section = epdSections.firstWhere(
       (s) => s.id == sectionId,
       orElse: () => epdSections.first,
     );
 
-    String? currentField = state.searchField;
-    String? currentValue = state.searchValue;
+    final keepExistingSearch = sectionId == state.activeSection;
+    final currentField = keepExistingSearch ? state.searchField : null;
+    final currentValue = keepExistingSearch ? state.searchValue : null;
+    final currentOperator = keepExistingSearch ? state.searchOperator : null;
 
     if (sectionId != 'companies' && state.selectedEmpresas.isEmpty) {
       state = state.copyWith(
@@ -598,37 +645,12 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         data: [],
         hasMore: false,
         errorMessage:
-            'Debes seleccionar una empresa en la pestaÃ±a Empresas para ver esta informaciÃ³n.',
+            'Debes seleccionar una empresa en la pestaña Empresas para ver esta información.',
       );
       return;
     }
 
-    if (state.selectedEmpresas.isNotEmpty && sectionId != 'companies') {
-      currentField = 'empresaId';
-      if (state.selectedEmpresas.length == 1) {
-        currentValue = state.selectedEmpresas.first['id']?.toString();
-      } else {
-        currentValue = state.selectedEmpresas
-            .map((e) => e['id']?.toString() ?? '')
-            .where((id) => id.isNotEmpty)
-            .join(',');
-      }
-    }
-
-    String? operator;
-    // Forzar operador 'in' para mÃºltiples empresas
-    if (state.selectedEmpresas.length > 1 && sectionId != 'companies') {
-      operator = 'in';
-    } else if (currentField != null) {
-      for (final row in state.data) {
-        if (row[currentField] != null) {
-          if (row[currentField] is Iterable) {
-            operator = 'array-contains';
-          }
-          break;
-        }
-      }
-    }
+    final empresaIds = _getEmpresaContextParam(sectionId);
 
     state = state.copyWith(
       activeSection: sectionId,
@@ -638,6 +660,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       hasMore: true,
       searchField: currentField,
       searchValue: currentValue,
+      searchOperator: currentOperator,
     );
 
     final result = await _dataSource.getCollection(
@@ -645,7 +668,8 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       limit: 20,
       searchField: currentField,
       searchValue: currentValue,
-      searchOperator: operator,
+      searchOperator: currentOperator,
+      empresaIds: empresaIds,
     );
 
     result.fold(
@@ -665,45 +689,47 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     );
   }
 
-  /// Aplica filtros en el servidor restando a la primera pÃ¡gina.
-  Future<void> applyFilter(String? field, String? value) async {
+  /// Aplica filtros en el servidor restando a la primera página.
+  Future<void> applyFilter(
+    String? field,
+    String? value, {
+    String? operatorOverride,
+  }) async {
     final section = epdSections.firstWhere(
       (s) => s.id == state.activeSection,
       orElse: () => epdSections.first,
     );
 
-    String? operator;
-    if (field != null) {
-      if (value != null && value.contains(',')) {
-        operator = 'in';
-      } else {
-        for (final row in state.data) {
-          if (row[field] != null) {
-            if (row[field] is Iterable) {
-              operator = 'array-contains';
-            }
-            break;
-          }
-        }
-      }
-    }
+    final normalizedValue = value?.trim();
+    final effectiveValue = (normalizedValue == null || normalizedValue.isEmpty)
+        ? null
+        : normalizedValue;
+    final effectiveField = effectiveValue == null ? null : field;
+    final operator = _inferOperator(
+      field: effectiveField,
+      value: effectiveValue,
+      explicitOperator: operatorOverride,
+    );
+    final empresaIds = _getEmpresaContextParam(state.activeSection);
 
     state = state.copyWith(
       isLoading: true,
       clearError: true,
       data: [],
       hasMore: true,
-      searchField: field,
-      searchValue: value,
-      clearSearch: field == null,
+      searchField: effectiveField,
+      searchValue: effectiveValue,
+      searchOperator: operator,
+      clearSearch: effectiveField == null,
     );
 
     final result = await _dataSource.getCollection(
       section.collection,
       limit: 20,
-      searchField: field,
-      searchValue: value,
+      searchField: effectiveField,
+      searchValue: effectiveValue,
       searchOperator: operator,
+      empresaIds: empresaIds,
     );
 
     result.fold(
@@ -723,7 +749,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     );
   }
 
-  /// Carga la siguiente pÃ¡gina de datos de la API.
+  /// Carga la siguiente página de datos de la API.
   Future<void> loadMore() async {
     if (state.isLoading || !state.hasMore || state.data.isEmpty) return;
 
@@ -731,18 +757,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
 
     final section = epdSections.firstWhere((s) => s.id == state.activeSection);
     final lastDocId = state.data.last['id']?.toString();
-
-    String? operator;
-    if (state.searchField != null) {
-      for (final row in state.data) {
-        if (row[state.searchField!] != null) {
-          if (row[state.searchField!] is Iterable) {
-            operator = 'array-contains';
-          }
-          break;
-        }
-      }
-    }
+    final empresaIds = _getEmpresaContextParam(state.activeSection);
 
     final result = await _dataSource.getCollection(
       section.collection,
@@ -750,7 +765,8 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       ultimoDocId: lastDocId,
       searchField: state.searchField,
       searchValue: state.searchValue,
-      searchOperator: operator,
+      searchOperator: state.searchOperator,
+      empresaIds: empresaIds,
     );
 
     result.fold(
@@ -844,20 +860,20 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       (response) async {
         final createdId = response['id']?.toString();
         await _refreshDependenciesIfNeeded(section.collection);
-        // Recargar datos tras el Ã©xito
+        // Recargar datos tras el ÃƒÂ©xito
         await selectSection(state.activeSection);
         return (error: null, id: createdId);
       },
     );
   }
 
-  /// Crea un nuevo documento en la colecciÃ³n activa actual.
+  /// Crea un nuevo documento en la colecciÃƒÂ³n activa actual.
   Future<String?> createItem(Map<String, dynamic> data) async {
     final result = await createItemWithId(data);
     return result.error;
   }
 
-  /// Actualiza un documento existente en la colecciÃ³n activa actual por ID.
+  /// Actualiza un documento existente en la colecciÃƒÂ³n activa actual por ID.
   Future<String?> updateItem(String id, Map<String, dynamic> data) async {
     state = state.copyWith(isLoading: true, clearError: true);
     final section = epdSections.firstWhere((s) => s.id == state.activeSection);
@@ -880,7 +896,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     );
   }
 
-  /// Sincroniza la relación sucursal-vendedores en la colección `users`.
+  /// Sincroniza la relaciÃ³n sucursal-vendedores en la colecciÃ³n `users`.
   /// La fuente de verdad es `users.IdSucursalesAsignadas`.
   Future<String?> syncBranchSellerAssignments({
     required String branchId,
@@ -946,7 +962,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     return null;
   }
 
-  /// Elimina un documento existente en la colecciÃ³n activa actual por ID.
+  /// Elimina un documento existente en la colecciÃƒÂ³n activa actual por ID.
   Future<String?> deleteItem(String id) async {
     state = state.copyWith(isLoading: true, clearError: true);
     final section = epdSections.firstWhere((s) => s.id == state.activeSection);
@@ -965,7 +981,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     );
   }
 
-  /// Realiza un ajuste atÃ³mico de inventario usando el endpoint /inventario-ajuste.
+  /// Realiza un ajuste atÃƒÂ³mico de inventario usando el endpoint /inventario-ajuste.
   /// El [data] debe contener los campos requeridos por el endpoint:
   /// IdProducto, IdSucursal, IdEmpresa, cantidad, motivo, [observacion].
   Future<String?> adjustInventory(Map<String, dynamic> data) async {
@@ -990,7 +1006,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
   }
 }
 
-// â”€â”€ Providers â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Providers Ã¢â€â‚¬Ã¢â€â‚¬
 final epdDataSourceProvider = Provider<EpdRemoteDataSource>((ref) {
   final dioClient = ref.watch(dioClientProvider);
   return EpdRemoteDataSource(dioClient);
@@ -1001,3 +1017,5 @@ final epdDashboardProvider =
       final dataSource = ref.watch(epdDataSourceProvider);
       return EpdDashboardViewModel(dataSource);
     });
+
+

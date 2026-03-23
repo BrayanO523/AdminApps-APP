@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -25,7 +25,6 @@ class EpdDashboardScreen extends ConsumerStatefulWidget {
 class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   final _searchController = TextEditingController();
   String? _selectedSearchField;
-  String _localSearchText = '';
   static const int _pageSize = 20;
   int _currentPage = 0;
 
@@ -69,23 +68,6 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
   }
 
-  /// Filtra los datos localmente por texto (case-insensitive contains).
-  List<Map<String, dynamic>> _applyLocalFilter(
-    List<Map<String, dynamic>> data,
-  ) {
-    if (_localSearchText.isEmpty || _selectedSearchField == null) return data;
-    final query = _localSearchText.toLowerCase();
-    final field = _selectedSearchField!;
-    return data.where((row) {
-      final val = row[field];
-      if (val == null) return false;
-      if (val is Iterable) {
-        return val.any((item) => item.toString().toLowerCase().contains(query));
-      }
-      return val.toString().toLowerCase().contains(query);
-    }).toList();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -107,7 +89,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     if (k.endsWith('_id') && k.length > 3) return true;
     if (k.toLowerCase().startsWith('id_') && k.length > 3) return true;
     if (k.endsWith('ID') && k.length > 2) return true;
-    // Empieza con 'Id' + mayúscula (IdSucursal, IdUsuario, IdEmpresa…)
+    // Empieza con 'Id' + mayúscula (IdSucursal, IdUsuario, IdEmpresa...)
     if (k.length > 2 &&
         k.startsWith('Id') &&
         k[2] == k[2].toUpperCase() &&
@@ -119,27 +101,34 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   void _clearFilters() {
     _searchController.clear();
     setState(() {
-      _localSearchText = '';
       _selectedSearchField = null;
     });
-    // Si hay una empresa seleccionada y no estamos en la sección de companies,
-    // re-aplicar el filtro de empresaId en lugar de limpiar todo.
-    final state = ref.read(epdDashboardProvider);
-    if (state.selectedEmpresas.isNotEmpty &&
-        state.activeSection != 'companies') {
-      final empresasIdStr = state.selectedEmpresas
-          .map((e) => e['id']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .join(',');
-      ref
-          .read(epdDashboardProvider.notifier)
-          .applyFilter(
-            'empresaId',
-            empresasIdStr.isNotEmpty ? empresasIdStr : null,
-          );
-    } else {
-      ref.read(epdDashboardProvider.notifier).applyFilter(null, null);
+    ref.read(epdDashboardProvider.notifier).applyFilter(null, null);
+  }
+
+  Future<void> _applyTextSearch(EpdDashboardState state) async {
+    final field = _selectedSearchField;
+    final query = _searchController.text.trim();
+
+    if (query.isEmpty) {
+      await ref.read(epdDashboardProvider.notifier).applyFilter(null, null);
+      return;
     }
+
+    if (field == null || field.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona una columna antes de buscar.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    await ref
+        .read(epdDashboardProvider.notifier)
+        .applyFilter(field, query, operatorOverride: 'contains');
   }
 
   @override
@@ -152,19 +141,17 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         _currentPage = 0;
         _searchController.clear();
         setState(() {
-          _localSearchText = '';
           _selectedSearchField = null;
         });
       }
     });
 
     final hasFilters = state.searchField != null && state.searchValue != null;
-    final isLocalFiltered = _localSearchText.isNotEmpty;
-    final filteredData = _applyLocalFilter(state.data);
+    final filteredData = state.data;
 
-    final totalItemsCount = isLocalFiltered
-        ? filteredData.length
-        : (state.totalItems > 0 ? state.totalItems : filteredData.length);
+    final totalItemsCount = state.totalItems > 0
+        ? state.totalItems
+        : filteredData.length;
     final totalPagesCount = (totalItemsCount / _pageSize).ceil();
 
     if (_currentPage >= totalPagesCount &&
@@ -434,7 +421,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             ),
           ),
         if (!isMobile) const Spacer(),
-        // Búsqueda Textual — Solo desktop
+        // Búsqueda textual - solo desktop
         if (!isMobile && (state.data.isNotEmpty || state.searchField != null))
           Container(
             height: 36,
@@ -468,11 +455,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 10),
                     ),
-                    onChanged: (value) {
-                      setState(() => _localSearchText = value);
-                    },
                     onSubmitted: (value) {
-                      setState(() => _localSearchText = value);
+                      _applyTextSearch(state);
                     },
                   ),
                 ),
@@ -833,7 +817,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     EpdDashboardState state,
   ) {
     switch (state.activeSection) {
-      // ── Sucursales ────────────────────────────────────────────────────────
+      // -- Sucursales --
       case 'branches':
         return {
           'assigned_seller_ids': DynamicFormFieldSchema(
@@ -856,7 +840,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Usuarios ──────────────────────────────────────────────────────────
+      // -- Usuarios --
       case 'users':
         return {
           'empresaId': DynamicFormFieldSchema(
@@ -882,7 +866,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Categorías ────────────────────────────────────────────────────────
+      // -- Categorías --
       case 'categories':
         return {
           'empresaId': DynamicFormFieldSchema(
@@ -904,7 +888,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Productos ─────────────────────────────────────────────────────────
+      // -- Productos --
       case 'products':
         return {
           'empresaId': DynamicFormFieldSchema(
@@ -930,6 +914,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
               {'value': 'AMBOS', 'label': 'Ambos'},
             ],
             label: 'Modo de Venta',
+            isReadOnly: true,
           ),
           'is_promo': DynamicFormFieldSchema(
             type: DynamicFormFieldType.radioSelect,
@@ -949,7 +934,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Combos ────────────────────────────────────────────────────────────
+      // -- Combos --
       case 'combos':
         return {
           'nombre': DynamicFormFieldSchema(
@@ -990,7 +975,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Clientes ──────────────────────────────────────────────────────────
+      // -- Clientes --
       case 'clients':
         return {
           'empresaId': DynamicFormFieldSchema(
@@ -1008,7 +993,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Proveedores ───────────────────────────────────────────────────────
+      // -- Proveedores --
       case 'suppliers':
         return {
           'empresaId': DynamicFormFieldSchema(
@@ -1034,7 +1019,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
-      // ── Asignaciones de Proveedores ───────────────────────────────────────
+      // -- Asignaciones de Proveedores --
       case 'supplier_assignments':
         return {
           'empresaId': DynamicFormFieldSchema(
@@ -1079,7 +1064,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
   } // fin de _buildFieldSchemas
 
-  // ── Lista global de campos de sistema que el admin NUNCA debe ver ni tocar ──
+  // -- Lista global de campos de sistema que el admin NUNCA debe ver ni tocar --
   static const _hiddenSystemFields = [
     // SQLite offline-only
     'creado_offline', 'modificado_offline', 'SYNC_STATUS',
@@ -1110,7 +1095,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   /// de creación funcione aunque la tabla esté completamente vacía.
   Map<String, dynamic> _getBaseFieldsForSection(String section) {
     switch (section) {
-      // ── Empresas ──────────────────────────────────────────────────────────
+      // -- Empresas --
       case 'companies':
         return {
           'nombreComercial': '',
@@ -1124,7 +1109,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // ── Sucursales (CodigoSucursal autogenerado por backend) ─────────────
+      // -- Sucursales (CódigoSucursal autogenerado por backend) --
       case 'branches':
         return {
           'Nombre': '',
@@ -1141,7 +1126,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // ── Usuarios ──────────────────────────────────────────────────────────
+      // -- Usuarios --
       case 'users':
         return {
           'NombreCompleto': '',
@@ -1157,7 +1142,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // ── Clientes ──────────────────────────────────────────────────────────
+      // -- Clientes --
       case 'clients':
         return {
           'NombreCompleto': '',
@@ -1172,7 +1157,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'sync_status': 1,
         };
 
-      // ── Categorías ────────────────────────────────────────────────────────
+      // -- Categorías --
       case 'categories':
         return {
           'NombreCategoria': '',
@@ -1182,7 +1167,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // ── Productos ─────────────────────────────────────────────────────────
+      // -- Productos --
       case 'products':
         return {
           'NombreProducto': '',
@@ -1205,7 +1190,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'sync_status': 1,
         };
 
-      // ── Combos ────────────────────────────────────────────────────────────
+      // -- Combos --
       case 'combos':
         return {
           'nombre': '',
@@ -1219,7 +1204,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'sync_status': 1,
         };
 
-      // ── Proveedores ───────────────────────────────────────────────────────
+      // -- Proveedores --
       case 'suppliers':
         return {
           'nombre': '',
@@ -1232,7 +1217,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // ── Asignaciones de Proveedores ───────────────────────────────────────
+      // -- Asignaciones de Proveedores --
       case 'supplier_assignments':
         return {
           'IdProveedor': '',
@@ -1242,7 +1227,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // Inventario, ventas, mermas, traslados → Solo lectura
+      // Inventario, ventas, mermas, traslados -> solo lectura
       case 'inventory':
       case 'inventory_transactions':
       case 'inventory_transfers':
@@ -1823,7 +1808,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                             ),
                           ),
                           Text(
-                            '$nombreProducto • Stock actual: $stockActual',
+                            ' • Stock actual: ',
                             style: GoogleFonts.outfit(
                               fontSize: 12,
                               color: const Color(0xFF64748B),
