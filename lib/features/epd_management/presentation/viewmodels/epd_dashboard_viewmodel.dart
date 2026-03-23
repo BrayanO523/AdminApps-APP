@@ -163,7 +163,13 @@ class EpdDashboardState implements ResolvableState {
                 final empId = d['empresaId']?.toString() ?? '';
                 return selectedIds.contains(empId);
               }).toList();
-        return _docsToOptions(docs);
+        final options = docs.map((d) {
+          final id = (d['IdProducto'] ?? d['id'] ?? '').toString().trim();
+          final name = _extractDocName(d) ?? id;
+          return {'value': id, 'label': name};
+        }).where((o) => o['value']!.isNotEmpty).toList();
+        options.sort((a, b) => a['label'].toString().compareTo(b['label'].toString()));
+        return options;
 
       default:
         return [];
