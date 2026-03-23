@@ -692,6 +692,22 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     );
   }
 
+  bool _affectsDependencyCaches(String collection) {
+    const dependencyCollections = {
+      'companies',
+      'branches',
+      'categories',
+      'users',
+    };
+    return dependencyCollections.contains(collection);
+  }
+
+  Future<void> _refreshDependenciesIfNeeded(String collection) async {
+    if (_affectsDependencyCaches(collection)) {
+      await _loadDependencies();
+    }
+  }
+
   /// Crea un nuevo documento en la colección activa actual.
   Future<String?> createItem(Map<String, dynamic> data) async {
     state = state.copyWith(isLoading: true, clearError: true);
@@ -704,6 +720,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         return failure.message; // Devuelve error para mostrar en UI
       },
       (_) async {
+        await _refreshDependenciesIfNeeded(section.collection);
         // Recargar datos tras el éxito
         await selectSection(state.activeSection);
         return null; // Null significa éxito
@@ -727,6 +744,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         return failure.message;
       },
       (_) async {
+        await _refreshDependenciesIfNeeded(section.collection);
         await selectSection(state.activeSection);
         return null;
       },
@@ -745,6 +763,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         return failure.message;
       },
       (_) async {
+        await _refreshDependenciesIfNeeded(section.collection);
         await selectSection(state.activeSection);
         return null;
       },

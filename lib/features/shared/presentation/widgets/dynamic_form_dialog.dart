@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import 'dynamic_form_field_schema.dart';
 
@@ -18,6 +17,10 @@ class DynamicFormDialog extends StatefulWidget {
   /// y campos de sistema (activo, last_modified, SYNC_STATUS, etc.).
   final List<String> hiddenFields;
 
+  /// Callback para subir una imagen. Recibe los bytes y la ruta de Storage.
+  /// Debe devolver la URL de descarga. Si es null, el botón de subida no aparece.
+  final Future<String> Function(List<int> bytes, String storagePath)? onUploadImage;
+
   const DynamicFormDialog({
     super.key,
     required this.initialData,
@@ -25,6 +28,7 @@ class DynamicFormDialog extends StatefulWidget {
     required this.title,
     this.fieldSchemas,
     this.hiddenFields = const [],
+    this.onUploadImage,
   });
 
   @override
@@ -878,7 +882,14 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                       controller: controller,
                       style: GoogleFonts.outfit(fontSize: 13),
                       decoration: InputDecoration(
-                        hintText: 'https://firebasestorage... o pega la URL',
+                        hintText: 'Selecciona una imagen con el botón →',
+                        suffixIcon: hasUrl
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18, color: Colors.grey),
+                                tooltip: 'Quitar imagen',
+                                onPressed: () { controller.clear(); setInner(() {}); },
+                              )
+                            : null,
                         hintStyle: GoogleFonts.outfit(fontSize: 12, color: Colors.grey.shade400),
                         filled: true, fillColor: Colors.white,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -892,31 +903,44 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
-                    onPressed: _isUploading ? null : () async {
-                      final picker = ImagePicker();
-                      final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-                      if (image == null) return;
-                      
-                      setInner(() => _isUploading = true);
-                      try {
-                        final bytes = await image.readAsBytes();
-                        // Firebase path: products/{empresaId}/{timestamp}.jpg
-                        final empresaId = widget.initialData['empresaId']?.toString() ?? 'global';
-                        final timestamp = DateTime.now().millisecondsSinceEpoch;
-                        final ref = FirebaseStorage.instance.ref().child('products/$empresaId/$timestamp.jpg');
-                        
-                        final uploadTask = await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-                        final downloadUrl = await uploadTask.ref.getDownloadURL();
-                        
-                        controller.text = downloadUrl;
-                        setInner(() {});
-                      } catch (e) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al subir: $e')));
-                      } finally {
-                        setInner(() => _isUploading = false);
-                      }
-                    },
+                    onPressed: _isUploading || widget.onUploadImage == null
+                        ? null
+                        : () async {
+                            final picker = ImagePicker();
+                            final XFile? image = await picker.pickImage(
+                              source: ImageSource.gallery,
+                              imageQuality: 85,
+                            );
+                            if (image == null) return;
+
+                            setInner(() => _isUploading = true);
+                            try {
+                              final bytes = await image.readAsBytes();
+
+                              // Resolver ruta dinámica desde schema.storagePath
+                              final ts = DateTime.now().millisecondsSinceEpoch;
+                              final empresaId = widget.initialData['empresaId']?.toString() ?? 'global';
+                              final docId = widget.initialData['id']?.toString() ?? '';
+                              final rawPath = schema.storagePath ?? 'uploads/{timestamp}.jpg';
+                              final resolvedPath = rawPath
+                                  .replaceAll('{timestamp}', ts.toString())
+                                  .replaceAll('{empresaId}', empresaId.isNotEmpty ? empresaId : 'global')
+                                  .replaceAll('{id}', docId.isNotEmpty ? docId : ts.toString());
+
+                              // Delegar la subida al callback provisto por el llamador
+                              final downloadUrl = await widget.onUploadImage!(bytes, resolvedPath);
+
+                              controller.text = downloadUrl;
+                              setInner(() {});
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error al subir imagen: $e')),
+                              );
+                            } finally {
+                              setInner(() => _isUploading = false);
+                            }
+                          },
                     icon: _isUploading 
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.upload_file_rounded, size: 18),

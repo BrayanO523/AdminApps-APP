@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -784,7 +784,9 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     );
   }
 
-  Map<String, DynamicFormFieldSchema> _buildFieldSchemas(EpdDashboardState state) {
+  Map<String, DynamicFormFieldSchema> _buildFieldSchemas(
+    EpdDashboardState state,
+  ) {
     switch (state.activeSection) {
       // ── Sucursales ────────────────────────────────────────────────────────
       case 'branches':
@@ -798,6 +800,14 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             type: DynamicFormFieldType.multiselectDropdown,
             optionsResolver: () => state.getDropdownOptions('categories'),
             label: 'Categorías Permitidas',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
           ),
         };
 
@@ -817,10 +827,13 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             ],
             label: 'Rol',
           ),
-          'IdSucursalesAsignadas': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('branches'),
-            label: 'Sucursales Asignadas',
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
           ),
         };
 
@@ -835,6 +848,14 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'Color': DynamicFormFieldSchema(
             type: DynamicFormFieldType.colorPicker,
             label: 'Color de Categoría',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
           ),
         };
 
@@ -854,6 +875,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'fotoUrl': DynamicFormFieldSchema(
             type: DynamicFormFieldType.imageUpload,
             label: 'Foto del Producto',
+            storagePath: 'products/{empresaId}/{id}/{timestamp}.jpg',
           ),
           'ModoVventa': DynamicFormFieldSchema(
             type: DynamicFormFieldType.radioSelect,
@@ -871,6 +893,14 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
               {'value': '1', 'label': 'Sí es Promoción'},
             ],
             label: '¿En Promoción?',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
           ),
         };
 
@@ -890,6 +920,15 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'fotoUrl': DynamicFormFieldSchema(
             type: DynamicFormFieldType.imageUpload,
             label: 'Foto del Combo',
+            storagePath: 'combos/{empresaId}/{id}/{timestamp}.jpg',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
           ),
         };
 
@@ -900,6 +939,14 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
           ),
         };
 
@@ -919,6 +966,14 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             ],
             label: '¿Alcance del Proveedor?',
           ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
+          ),
         };
 
       // ── Asignaciones de Proveedores ───────────────────────────────────────
@@ -934,8 +989,33 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             options: state.getDropdownOptions('branches'),
             label: 'Sucursal',
           ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
+          ),
         };
 
+      // -- Empresas ---------------------------------------------------------
+      case 'companies':
+        return {
+          'logoUrl': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Logo de la Empresa',
+            storagePath: 'companies/{id}/{timestamp}.jpg',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
+          ),
+        };
       default:
         return {};
     }
@@ -951,7 +1031,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     // Auditoría interna
     'creado_por', 'modificado_por', 'idusuario', 'Idvendedor',
     // Banderas y contadores internos del motor móvil
-    'activo', 'Activo', 'estado', 'Favorito', 'OrdenFavorito',
+    'estado', 'Favorito', 'OrdenFavorito',
     'contador_ventas', 'isTemplate', 'source_template_id',
     'sync_status', 'control_inventario', 'clientes_enabled',
     'pesos_rapidos_enabled', 'adminId',
@@ -962,7 +1042,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'CodigoSucursal',
     // Campos de usuario que no aplican en el formulario
     'selected_categories',
-    // Legacy ID (se rellena automáticamente en backend desde IdSucursalesAsignadas)
+    'IdSucursalesAsignadas',
     'IdSucursal',
   ];
 
@@ -1110,6 +1190,23 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       case 'category_templates':
         return {}; // Sin formulario de creación
 
+      // -- Empresas ---------------------------------------------------------
+      case 'companies':
+        return {
+          'logoUrl': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Logo de la Empresa',
+            storagePath: 'companies/{id}/{timestamp}.jpg',
+          ),
+          'activo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
+          ),
+        };
       default:
         return {};
     }
@@ -1124,8 +1221,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
     // Si hay una sola empresa seleccionada, se inyecta como empresaId
     if (state.selectedEmpresas.length == 1) {
-      final empresaId = state.selectedEmpresas.first['value']?.toString()
-          ?? state.selectedEmpresas.first['id']?.toString() ?? '';
+      final empresaId =
+          state.selectedEmpresas.first['value']?.toString() ??
+          state.selectedEmpresas.first['id']?.toString() ??
+          '';
       if (empresaId.isNotEmpty) {
         initialData['empresaId'] = empresaId;
         contextHidden.add('empresaId');
@@ -1133,7 +1232,9 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     // Si hay un filtro de búsqueda activo, también se inyecta y oculta
-    if (state.searchField != null && state.searchValue != null && state.searchValue!.isNotEmpty) {
+    if (state.searchField != null &&
+        state.searchValue != null &&
+        state.searchValue!.isNotEmpty) {
       initialData[state.searchField!] = state.searchValue!;
       contextHidden.add(state.searchField!);
     }
@@ -1288,20 +1389,20 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     final observacionCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
 
-    final productoId = row['IdProducto']?.toString() ??
+    final productoId =
+        row['IdProducto']?.toString() ??
         row['idProducto']?.toString() ??
         row['id']?.toString() ??
         '';
-    final sucursalId = row['IdSucursal']?.toString() ??
-        row['idSucursal']?.toString() ??
-        '';
-    final empresaId = row['IdEmpresa']?.toString() ??
+    final sucursalId =
+        row['IdSucursal']?.toString() ?? row['idSucursal']?.toString() ?? '';
+    final empresaId =
+        row['IdEmpresa']?.toString() ??
         row['idEmpresa']?.toString() ??
         row['empresaId']?.toString() ??
         '';
-    final nombreProducto = row['nombre']?.toString() ??
-        row['name']?.toString() ??
-        productoId;
+    final nombreProducto =
+        row['nombre']?.toString() ?? row['name']?.toString() ?? productoId;
     final stockActual = row['stock']?.toString() ?? '?';
 
     final confirm = await showDialog<Map<String, dynamic>>(
@@ -1527,9 +1628,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                       icon: const Icon(Icons.check_rounded, size: 18),
                       label: Text(
                         'Aplicar Ajuste',
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF059669),
@@ -1549,9 +1648,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                             'IdProducto': productoId,
                             'IdSucursal': sucursalId,
                             'IdEmpresa': empresaId,
-                            'cantidad': double.parse(
-                              cantidadCtrl.text.trim(),
-                            ),
+                            'cantidad': double.parse(cantidadCtrl.text.trim()),
                             'motivo': motivoCtrl.text.trim(),
                             'observacion': observacionCtrl.text.trim(),
                           });

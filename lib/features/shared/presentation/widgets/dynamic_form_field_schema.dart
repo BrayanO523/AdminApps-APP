@@ -41,6 +41,19 @@ class DynamicFormFieldSchema {
   /// Si es true, el campo será de sólo lectura.
   final bool isReadOnly;
 
+  /// Ruta de destino en Firebase Storage para campos de tipo [imageUpload].
+  /// Soporta las siguientes variables interpolables con los datos del formulario:
+  /// - `{id}`        → doc.id (disponible en edición, vacío en creación)
+  /// - `{empresaId}` → valor del campo empresaId en initialData
+  /// - `{timestamp}` → DateTime.now().millisecondsSinceEpoch
+  ///
+  /// Si se omite, se usa el path por defecto: `uploads/{timestamp}.jpg`
+  ///
+  /// Ejemplos:
+  ///   `'companies/{empresaId}/logo.jpg'`  (edición de empresa)
+  ///   `'products/{empresaId}/{timestamp}.jpg'` (producto nuevo)
+  final String? storagePath;
+
   const DynamicFormFieldSchema({
     required this.type,
     this.options,
@@ -48,6 +61,7 @@ class DynamicFormFieldSchema {
     this.label,
     this.hintText,
     this.isReadOnly = false,
+    this.storagePath,
   });
 
   /// Retorna las opciones resolviendo el provider si está disponible,
