@@ -43,6 +43,22 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   late Map<String, dynamic> _formData;
   late Map<String, TextEditingController> _controllers;
   static const Set<String> _nativeArrayFields = {'allowed_categories'};
+  static const String _saleModeFieldKey = 'ModoVventa';
+  static const Set<String> _unitPriceFieldKeys = {
+    'preciounidad',
+    'precioUnidad',
+    'precio_unidad',
+  };
+  static const Set<String> _lbPriceFieldKeys = {
+    'precioLibra',
+    'precio_lb',
+    'precio_libra',
+  };
+  static const Set<String> _promoToggleFieldKeys = {'is_promo'};
+  static const Set<String> _promoPriceFieldKeys = {
+    'promo_price',
+    'promo_price_lb',
+  };
   static const Color _accentColor = Color(0xFF4F46E5);
   static const Color _labelColor = Color(0xFF334155);
   static const Color _inputTextColor = Color(0xFF0F172A);
@@ -57,6 +73,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
   /// Imágenes seleccionadas localmente que se subirán al presionar Guardar.
   final Map<String, Uint8List> _pendingImageBytes = {};
+  final Set<String> _autoSaleModeListenerKeys = {};
 
   bool _isUploading = false;
 
@@ -98,10 +115,15 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
       _controllers[key] = TextEditingController(text: value?.toString() ?? '');
     }
+
+    _configureAutoSaleModeCalculation();
   }
 
   @override
   void dispose() {
+    for (final key in _autoSaleModeListenerKeys) {
+      _controllers[key]?.removeListener(_handlePriceFieldChanged);
+    }
     for (final c in _controllers.values) {
       c.dispose();
     }
@@ -109,6 +131,105 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  void _configureAutoSaleModeCalculation() {
+    if (!_controllers.containsKey(_saleModeFieldKey)) return;
+
+    final unitPriceKey = _findFirstExistingControllerKey(_unitPriceFieldKeys);
+    final lbPriceKey = _findFirstExistingControllerKey(_lbPriceFieldKeys);
+
+    if (unitPriceKey == null && lbPriceKey == null) return;
+
+    if (unitPriceKey != null && _autoSaleModeListenerKeys.add(unitPriceKey)) {
+      _controllers[unitPriceKey]?.addListener(_handlePriceFieldChanged);
+    }
+
+    if (lbPriceKey != null && _autoSaleModeListenerKeys.add(lbPriceKey)) {
+      _controllers[lbPriceKey]?.addListener(_handlePriceFieldChanged);
+    }
+
+    _updateSaleModeFromPrices(notifyUi: false);
+  }
+
+  String? _findFirstExistingControllerKey(Set<String> candidates) {
+    for (final key in candidates) {
+      if (_controllers.containsKey(key)) return key;
+    }
+    return null;
+  }
+
+  void _handlePriceFieldChanged() {
+    _updateSaleModeFromPrices();
+  }
+
+  void _updateSaleModeFromPrices({bool notifyUi = true}) {
+    final saleModeController = _controllers[_saleModeFieldKey];
+    if (saleModeController == null) return;
+
+    final unitPriceText =
+        _controllers[_findFirstExistingControllerKey(_unitPriceFieldKeys)]
+            ?.text;
+    final lbPriceText =
+        _controllers[_findFirstExistingControllerKey(_lbPriceFieldKeys)]?.text;
+
+    final hasUnitPrice = _hasPositiveNumber(unitPriceText);
+    final hasLbPrice = _hasPositiveNumber(lbPriceText);
+
+    String? nextMode;
+    if (hasUnitPrice && hasLbPrice) {
+      nextMode = 'AMBOS';
+    } else if (hasLbPrice) {
+      nextMode = 'LB';
+    } else if (hasUnitPrice) {
+      nextMode = 'UNIDAD';
+    }
+
+    if (nextMode == null || saleModeController.text == nextMode) return;
+
+    saleModeController.text = nextMode;
+    if (notifyUi && mounted) {
+      setState(() {});
+    }
+  }
+
+  bool _hasPositiveNumber(String? value) {
+    final raw = value?.trim() ?? '';
+    if (raw.isEmpty) return false;
+    final parsed = double.tryParse(raw.replaceAll(',', '.'));
+    if (parsed == null) return false;
+    return parsed > 0;
+  }
+
+  bool _isPromotionEnabled() {
+    String? rawValue;
+    for (final key in _promoToggleFieldKeys) {
+      final controller = _controllers[key];
+      if (controller != null) {
+        rawValue = controller.text.trim();
+        break;
+      }
+    }
+
+    if (rawValue == null || rawValue.isEmpty) return false;
+    final normalized = rawValue.toLowerCase();
+    return normalized == '1' ||
+        normalized == 'true' ||
+        normalized == 'si' ||
+        normalized == 'sí' ||
+        normalized == 'yes';
+  }
+
+  List<String> _applyConditionalVisibility(List<String> allFieldKeys) {
+    final hasPromoToggle = _promoToggleFieldKeys.any(_controllers.containsKey);
+    if (!hasPromoToggle) return allFieldKeys;
+
+    final isPromoEnabled = _isPromotionEnabled();
+    if (isPromoEnabled) return allFieldKeys;
+
+    return allFieldKeys
+        .where((fieldKey) => !_promoPriceFieldKeys.contains(fieldKey))
+        .toList();
   }
 
   Future<void> _onSave() async {
@@ -249,6 +370,95 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
+  static const Map<String, String> _friendlyFieldLabels = {
+    'id': 'ID',
+    'empresaId': 'Empresa',
+    'adminId': 'Administrador',
+    'sucursalId': 'Sucursal',
+    'IdSucursal': 'Sucursal',
+    'IdSucursalesAsignadas': 'Sucursales Asignadas',
+    'selected_categories': 'Categorías Permitidas',
+    'allowed_categories': 'Categorías Permitidas',
+    'assigned_seller_ids': 'Vendedores Asignados',
+    'seller_id': 'Vendedor',
+    'Idvendedor': 'Vendedor',
+    'IdUsuario': 'Usuario',
+    'CodigoUsuario': 'Código de Usuario',
+    'Nombre': 'Nombre',
+    'NombreCompleto': 'Nombre Completo',
+    'nombreComercial': 'Nombre Comercial',
+    'razonSocial': 'Razón Social',
+    'telefono_contacto': 'Teléfono de Contacto',
+    'direccion_referencia': 'Dirección de Referencia',
+    'NombreCategoria': 'Categoría',
+    'IdCategoria': 'Categoría',
+    'NombreProducto': 'Nombre del Producto',
+    'IdProducto': 'Producto',
+    'NombreCombo': 'Nombre del Combo',
+    'IdCombo': 'Combo',
+    'IdCliente': 'Cliente',
+    'IdProveedor': 'Proveedor',
+    'IdInventario': 'Inventario',
+    'IdTransaccion': 'Transacción',
+    'IdVenta': 'Venta',
+    'Color': 'Color',
+    'logoUrl': 'Logo',
+    'fotoUrl': 'Foto',
+    'ModoVventa': 'Modo de Venta',
+    'esGlobal': 'Alcance del Proveedor',
+    'activo': 'Estado',
+    'sync_status': 'Estado de Sincronización',
+  };
+
+  String _resolveFieldLabel(String key, {String? explicitLabel}) {
+    if (explicitLabel != null && explicitLabel.trim().isNotEmpty) {
+      return explicitLabel.trim();
+    }
+
+    final direct =
+        _friendlyFieldLabels[key] ?? _friendlyFieldLabels[key.toLowerCase()];
+    if (direct != null) return direct;
+
+    return _humanizeKey(key);
+  }
+
+  String _humanizeKey(String key) {
+    final trimmed = key.trim();
+    if (trimmed.isEmpty) return key;
+
+    final withSpaces = trimmed
+        .replaceAll('_', ' ')
+        .replaceAllMapped(
+          RegExp(r'(?<=[a-z0-9])([A-Z])'),
+          (m) => ' ${m.group(1)}',
+        );
+
+    final words = withSpaces
+        .split(RegExp(r'\s+'))
+        .where((w) => w.trim().isNotEmpty)
+        .toList();
+
+    const acronyms = {
+      'id': 'ID',
+      'url': 'URL',
+      'uid': 'UID',
+      'rtn': 'RTN',
+      'pin': 'PIN',
+      'api': 'API',
+      'lb': 'LB',
+    };
+
+    return words
+        .map((word) {
+          final lower = word.toLowerCase();
+          final acronym = acronyms[lower];
+          if (acronym != null) return acronym;
+          if (word.length == 1) return word.toUpperCase();
+          return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
+        })
+        .join(' ');
+  }
+
   Widget _buildFieldCard(Widget child) {
     return Container(
       decoration: BoxDecoration(
@@ -354,6 +564,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       ..._controllers.keys.where((k) => !hiddenSet.contains(k)),
       ..._jsonArrayFields.keys.where((k) => !hiddenSet.contains(k)),
     ];
+    final visibleFieldKeys = _applyConditionalVisibility(allFieldKeys);
 
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth >= 1400
@@ -423,7 +634,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             Expanded(
               child: Form(
                 key: _formKey,
-                child: _buildResponsiveFields(allFieldKeys),
+                child: _buildResponsiveFields(visibleFieldKeys),
               ),
             ),
 
@@ -488,7 +699,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final controller = _controllers[key]!;
     final isReadOnly =
         widget.isEdit && (key == 'id') || (schema?.isReadOnly == true);
-    final label = schema?.label ?? key.toUpperCase();
+    final label = _resolveFieldLabel(key, explicitLabel: schema?.label);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -527,7 +738,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             // Label + badge de tipo
             Row(
               children: [
-                Text(key.toUpperCase(), style: _fieldLabelStyle()),
+                Text(_resolveFieldLabel(key), style: _fieldLabelStyle()),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -661,7 +872,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   Widget _buildSingleDropdownField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
     final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
-    final label = schema.label ?? key.toUpperCase();
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
     // Resolve options lazily at render time to always get the latest state
     final options = schema.resolveOptions();
 
@@ -795,7 +1006,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
     final items = _jsonArrayFields[key]!;
     final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
-    final label = schema.label ?? key.toUpperCase();
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
     final options = schema.resolveOptions();
 
     List<Map<String, dynamic>> selectedItems = [];
@@ -980,7 +1191,8 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   // ── Radio Select (dropdown estático de opciones predefinidas texto/valor) ──
   Widget _buildRadioSelectField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
-    final label = schema.label ?? key.toUpperCase();
+    final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
     final options = schema.options ?? [];
     String? currentVal = controller.text.isNotEmpty ? controller.text : null;
     // Normalizar: si el valor guardado no está en el listado de values, resetear
@@ -1008,11 +1220,13 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               ),
             );
           }).toList(),
-          onChanged: (val) {
-            setState(() => controller.text = val ?? '');
-          },
+          onChanged: isReadOnly
+              ? null
+              : (val) {
+                  setState(() => controller.text = val ?? '');
+                },
           style: GoogleFonts.outfit(fontSize: 14, color: _inputTextColor),
-          decoration: _fieldDecoration(),
+          decoration: _fieldDecoration(isReadOnly: isReadOnly),
         ),
       ],
     );
@@ -1021,7 +1235,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   // ── Color Picker (swatch + campo de texto hex) ──
   Widget _buildColorPickerField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
-    final label = schema.label ?? key.toUpperCase();
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
 
     // Colores predefinidos frecuentes
     final predefined = [
@@ -1147,7 +1361,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   // ── Image Upload (URL + nota de subida) ──
   Widget _buildImageUploadField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
-    final label = schema.label ?? key.toUpperCase();
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
 
     return StatefulBuilder(
       builder: (ctx, setInner) {

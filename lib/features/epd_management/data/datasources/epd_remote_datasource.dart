@@ -18,6 +18,7 @@ class EpdRemoteDataSource {
     String? searchField,
     String? searchValue,
     String? searchOperator,
+    String? empresaIds,
   }) async {
     try {
       final queryParams = {
@@ -26,6 +27,7 @@ class EpdRemoteDataSource {
         if (searchField != null && searchField.isNotEmpty) 'campo': searchField,
         if (searchValue != null && searchValue.isNotEmpty) 'valor': searchValue,
         if (searchOperator != null) 'operador': searchOperator,
+        if (empresaIds != null && empresaIds.isNotEmpty) 'empresa_id': empresaIds,
       };
 
       final response = await _dioClient.instance.get(
