@@ -723,7 +723,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             }
           },
           popupProps: PopupProps.menu(
-            showSearchBox: options.length > 5,
+            showSearchBox: true,
             showSelectedItems: true,
             menuProps: const MenuProps(
               backgroundColor: Colors.white,
@@ -923,7 +923,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             });
           },
           popupProps: PopupPropsMultiSelection.menu(
-            showSearchBox: options.length > 5,
+            showSearchBox: true,
             showSelectedItems: true,
             menuProps: const MenuProps(
               backgroundColor: Colors.white,
