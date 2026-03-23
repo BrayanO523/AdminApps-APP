@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -121,6 +122,12 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
   List<String>? _cachedColumns;
   int _lastDataHash = 0;
 
+  /// Workaround para un assert intermitente de SelectionContainer en Flutter Web.
+  Widget _withSafeSelection(Widget child) {
+    if (kIsWeb) return child;
+    return SelectionArea(child: child);
+  }
+
   @override
   void dispose() {
     _horizontalController.dispose();
@@ -186,8 +193,8 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
                 height: constraints.maxHeight,
                 child: SingleChildScrollView(
                   scrollDirection: Axis.vertical,
-                  child: SelectionArea(
-                    child: DataTable(
+                  child: _withSafeSelection(
+                    DataTable(
                       headingRowColor: WidgetStateProperty.all(
                         const Color(0xFFF1F5F9),
                       ),
@@ -534,7 +541,7 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
               borderRadius: BorderRadius.circular(7),
               child: Image.network(
                 url,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Icon(
                   Icons.broken_image_rounded,
                   size: 18,
@@ -739,8 +746,8 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
                 ),
               ),
               Flexible(
-                child: SelectionArea(
-                  child: ListView.separated(
+                child: _withSafeSelection(
+                  ListView.separated(
                     shrinkWrap: true,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -882,8 +889,8 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
               ),
               // ── Content ──
               Flexible(
-                child: SelectionArea(
-                  child: ListView.separated(
+                child: _withSafeSelection(
+                  ListView.separated(
                     shrinkWrap: true,
                     padding: const EdgeInsets.all(16),
                     itemCount: items.length,
@@ -1094,7 +1101,7 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
                         borderRadius: BorderRadius.circular(8),
                         child: Image.network(
                           imageUrl,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => Container(
                             color: const Color(0xFFF1F5F9),
                             alignment: Alignment.center,
