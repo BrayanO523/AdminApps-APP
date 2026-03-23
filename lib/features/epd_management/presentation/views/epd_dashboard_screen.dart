@@ -836,10 +836,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       // ── Sucursales ────────────────────────────────────────────────────────
       case 'branches':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
+          'assigned_seller_ids': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.multiselectDropdown,
+            optionsResolver: () => state.getDropdownOptions('users'),
+            label: 'Vendedores Asignados',
           ),
           'allowed_categories': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
@@ -956,6 +956,11 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
+          ),
+          'productos_combo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.multiselectDropdown,
+            optionsResolver: () => state.getDropdownOptions('products'),
+            label: 'Productos del Combo',
           ),
           'sucursales_asignadas': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
@@ -1075,6 +1080,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'fecha_creacion_registro',
     // Auditoría interna
     'creado_por', 'modificado_por', 'idusuario', 'Idvendedor',
+    'seller_id',
     // Banderas y contadores internos del motor móvil
     'estado', 'Favorito', 'OrdenFavorito',
     'contador_ventas', 'isTemplate', 'source_template_id',
@@ -1089,6 +1095,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'selected_categories',
     'IdSucursalesAsignadas',
     'IdSucursal',
+    'items',
   ];
 
   /// Devuelve los campos base requeridos por cada colección, para que el formulario
@@ -1117,6 +1124,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'telefono_contacto': '',
           'empresaId': '',
           'adminId': '',
+          'assigned_seller_ids': <String>[],
           'allowed_categories': <String>[],
           'control_inventario': 1,
           'clientes_enabled': 1,
@@ -1196,6 +1204,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'descripcion': '',
           'precio': 0.0,
           'fotoUrl': '',
+          'productos_combo': <String>[],
           'sucursales_asignadas': '[]',
           'empresaId': '',
           'activo': 1,
@@ -1235,29 +1244,258 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       case 'category_templates':
         return {}; // Sin formulario de creación
 
-      // -- Empresas ---------------------------------------------------------
-      case 'companies':
-        return {
-          'logoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Logo de la Empresa',
-            storagePath: 'companies/{id}/{timestamp}.jpg',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
       default:
         return {};
     }
   }
 
+  List<String> _parseStringList(dynamic rawValue) {
+    final result = <String>[];
+    void addValue(dynamic value) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty && !result.contains(text)) {
+        result.add(text);
+      }
+    }
+
+    if (rawValue == null) return result;
+
+    if (rawValue is String) {
+      final raw = rawValue.trim();
+      if (raw.isEmpty) return result;
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Iterable) {
+            for (final item in decoded) {
+              addValue(item);
+            }
+            return result;
+          }
+        } catch (_) {}
+      }
+      addValue(raw);
+      return result;
+    }
+
+    if (rawValue is Iterable) {
+      for (final item in rawValue) {
+        addValue(item);
+      }
+      return result;
+    }
+
+    addValue(rawValue);
+    return result;
+  }
+
+  List<String> _getAssignedSellerIdsForBranch(
+    EpdDashboardState state,
+    Map<String, dynamic> branchRow,
+  ) {
+    final branchId = branchRow['id']?.toString().trim() ?? '';
+    if (branchId.isEmpty) return const [];
+
+    final branchEmpresaId = branchRow['empresaId']?.toString().trim() ?? '';
+    final result = <String>[];
+
+    for (final user in state.cachedUsers) {
+      final userId = user['id']?.toString().trim() ?? '';
+      if (userId.isEmpty) continue;
+
+      if (branchEmpresaId.isNotEmpty) {
+        final userEmpresaId = user['empresaId']?.toString().trim() ?? '';
+        if (userEmpresaId != branchEmpresaId) continue;
+      }
+
+      final assigned = _parseStringList(user['IdSucursalesAsignadas']);
+      if (assigned.contains(branchId)) {
+        result.add(userId);
+      }
+    }
+
+    return result;
+  }
+
+  List<Map<String, dynamic>> _parseMapList(dynamic rawValue) {
+    final result = <Map<String, dynamic>>[];
+    dynamic source = rawValue;
+
+    if (source is String) {
+      final raw = source.trim();
+      if (raw.isEmpty) return result;
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        try {
+          source = jsonDecode(raw);
+        } catch (_) {
+          return result;
+        }
+      } else {
+        return result;
+      }
+    }
+
+    if (source is! Iterable) return result;
+
+    for (final item in source) {
+      if (item is Map<String, dynamic>) {
+        result.add(Map<String, dynamic>.from(item));
+        continue;
+      }
+      if (item is Map) {
+        result.add(item.map((k, v) => MapEntry(k.toString(), v)));
+        continue;
+      }
+      if (item is String) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic>) {
+            result.add(Map<String, dynamic>.from(decoded));
+          } else if (decoded is Map) {
+            result.add(decoded.map((k, v) => MapEntry(k.toString(), v)));
+          }
+        } catch (_) {}
+      }
+    }
+
+    return result;
+  }
+
+  List<String> _extractComboProductIds(dynamic rawItems) {
+    final items = _parseMapList(rawItems);
+    final productIds = <String>[];
+    for (final item in items) {
+      final value =
+          item['productoId']?.toString() ??
+          item['productId']?.toString() ??
+          item['IdProducto']?.toString() ??
+          '';
+      final productId = value.trim();
+      if (productId.isNotEmpty && !productIds.contains(productId)) {
+        productIds.add(productId);
+      }
+    }
+    return productIds;
+  }
+
+  List<Map<String, dynamic>> _buildComboItemsPayload({
+    required List<String> productIds,
+    required String comboId,
+    required List<Map<String, dynamic>> existingItems,
+  }) {
+    final existingByProduct = <String, Map<String, dynamic>>{};
+    for (final item in existingItems) {
+      final value =
+          item['productoId']?.toString() ??
+          item['productId']?.toString() ??
+          item['IdProducto']?.toString() ??
+          '';
+      final productId = value.trim();
+      if (productId.isNotEmpty && !existingByProduct.containsKey(productId)) {
+        existingByProduct[productId] = item;
+      }
+    }
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    return List<Map<String, dynamic>>.generate(productIds.length, (index) {
+      final productId = productIds[index];
+      final existing = existingByProduct[productId];
+
+      final idComboItem = existing?['idComboItem']?.toString().trim() ?? '';
+      final itemComboId = existing?['comboId']?.toString().trim() ?? '';
+      final itemVariantId = existing?['variantId']?.toString() ?? '';
+      final itemTipoUnidad = existing?['tipounidad']?.toString().trim() ?? '';
+      final cantidadRaw = existing?['cantidad'];
+
+      num cantidad = 1;
+      if (cantidadRaw is num) {
+        cantidad = cantidadRaw;
+      } else if (cantidadRaw != null) {
+        cantidad = num.tryParse(cantidadRaw.toString()) ?? 1;
+      }
+
+      return {
+        'idComboItem': idComboItem.isNotEmpty
+            ? idComboItem
+            : 'combo_item_${timestamp}_$index',
+        'comboId': comboId.isNotEmpty ? comboId : itemComboId,
+        'productoId': productId,
+        'variantId': itemVariantId,
+        'cantidad': cantidad,
+        'tipounidad': itemTipoUnidad.isNotEmpty ? itemTipoUnidad : 'UNIDAD',
+      };
+    });
+  }
+
+  Map<String, dynamic> _normalizePayloadForSubmit(
+    EpdDashboardState state,
+    Map<String, dynamic> result, {
+    Map<String, dynamic>? existingRow,
+  }) {
+    final payload = Map<String, dynamic>.from(result);
+
+    if (state.activeSection == 'branches') {
+      // Solo para UI de sucursales; no debe persistirse en el documento branch.
+      payload.remove('assigned_seller_ids');
+      payload.remove('Idvendedor');
+      payload.remove('seller_id');
+      return payload;
+    }
+
+    if (state.activeSection != 'combos') return payload;
+
+    final selectedProductIds = _parseStringList(
+      payload.remove('productos_combo'),
+    );
+    final existingItems = _parseMapList(existingRow?['items']);
+    final comboId =
+        existingRow?['id']?.toString() ?? payload['id']?.toString() ?? '';
+
+    payload['items'] = _buildComboItemsPayload(
+      productIds: selectedProductIds,
+      comboId: comboId,
+      existingItems: existingItems,
+    );
+
+    return payload;
+  }
+
+  Map<String, dynamic> _buildDialogInitialData(
+    EpdDashboardState state,
+    Map<String, dynamic> row,
+  ) {
+    if (state.activeSection == 'branches') {
+      final initialData = Map<String, dynamic>.from(row);
+      initialData['assigned_seller_ids'] = _getAssignedSellerIdsForBranch(
+        state,
+        row,
+      );
+      return initialData;
+    }
+
+    if (state.activeSection != 'combos') {
+      return Map<String, dynamic>.from(row);
+    }
+
+    final initialData = Map<String, dynamic>.from(row);
+    initialData['productos_combo'] = _extractComboProductIds(row['items']);
+    return initialData;
+  }
+
   Future<void> _showCreateDialog(EpdDashboardState state) async {
+    if (state.activeSection == 'branches' &&
+        state.selectedEmpresas.length != 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Para crear una sucursal debes seleccionar exactamente 1 empresa en el contexto.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     // Plantilla base por sección (robusta, no depende de state.data.first)
     final initialData = _getBaseFieldsForSection(state.activeSection);
 
@@ -1284,8 +1522,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       contextHidden.add(state.searchField!);
     }
 
-    // Lista combinada de ocultos: sistema + contexto ya inyectado
-    final hiddenFields = [..._hiddenSystemFields, ...contextHidden];
+    // Lista combinada de ocultos: sistema + contexto ya inyectado.
+    final hiddenFields = [
+      ..._hiddenSystemFields,
+      if (state.activeSection == 'branches') 'empresaId',
+      ...contextHidden,
+    ];
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -1301,9 +1543,35 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     );
 
     if (result != null && mounted) {
-      final error = await ref
-          .read(epdDashboardProvider.notifier)
-          .createItem(result);
+      final notifier = ref.read(epdDashboardProvider.notifier);
+      final payload = _normalizePayloadForSubmit(state, result);
+      String? error;
+
+      if (state.activeSection == 'branches') {
+        final selectedSellerIds = _parseStringList(
+          result['assigned_seller_ids'],
+        );
+        final createResult = await notifier.createItemWithId(payload);
+        error = createResult.error;
+
+        if (error == null) {
+          final branchId = createResult.id?.trim() ?? '';
+          if (branchId.isNotEmpty) {
+            final syncError = await notifier.syncBranchSellerAssignments(
+              branchId: branchId,
+              sellerIds: selectedSellerIds,
+              empresaId: payload['empresaId']?.toString(),
+            );
+            error = syncError;
+          } else {
+            error =
+                'La sucursal se creó, pero no se obtuvo el ID para asignar vendedores.';
+          }
+        }
+      } else {
+        error = await notifier.createItem(payload);
+      }
+
       if (mounted) {
         if (error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1323,15 +1591,20 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
     final state = ref.read(epdDashboardProvider);
+    final initialData = _buildDialogInitialData(state, row);
+    final hiddenFields = [
+      ..._hiddenSystemFields,
+      if (state.activeSection == 'branches') 'empresaId',
+    ];
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
       builder: (_) => DynamicFormDialog(
-        initialData: row,
+        initialData: initialData,
         isEdit: true,
         title: 'Editar Documento',
         fieldSchemas: _buildFieldSchemas(state),
-        hiddenFields: _hiddenSystemFields,
+        hiddenFields: hiddenFields,
         onUploadImage: _uploadImageToStorage,
       ),
     );
@@ -1345,9 +1618,26 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return;
       }
 
-      final error = await ref
-          .read(epdDashboardProvider.notifier)
-          .updateItem(id, result);
+      final notifier = ref.read(epdDashboardProvider.notifier);
+      final payload = _normalizePayloadForSubmit(
+        state,
+        result,
+        existingRow: row,
+      );
+      String? error = await notifier.updateItem(id, payload);
+
+      if (error == null && state.activeSection == 'branches') {
+        final selectedSellerIds = _parseStringList(
+          result['assigned_seller_ids'],
+        );
+        error = await notifier.syncBranchSellerAssignments(
+          branchId: id,
+          sellerIds: selectedSellerIds,
+          empresaId:
+              payload['empresaId']?.toString() ?? row['empresaId']?.toString(),
+        );
+      }
+
       if (mounted) {
         if (error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
