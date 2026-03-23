@@ -791,12 +791,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
           ),
           'allowed_categories': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
-            options: state.getDropdownOptions('categories'),
+            optionsResolver: () => state.getDropdownOptions('categories'),
             label: 'Categorías Permitidas',
           ),
         };
@@ -806,7 +806,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa Activa',
           ),
           'rol': DynamicFormFieldSchema(
@@ -819,7 +819,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
           'IdSucursalesAsignadas': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('branches'),
+            optionsResolver: () => state.getDropdownOptions('branches'),
             label: 'Sucursales Asignadas',
           ),
         };
@@ -829,10 +829,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
           ),
-          'color': DynamicFormFieldSchema(
+          'Color': DynamicFormFieldSchema(
             type: DynamicFormFieldType.colorPicker,
             label: 'Color de Categoría',
           ),
@@ -843,12 +843,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
           ),
           'IdCategoria': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('categories'),
+            optionsResolver: () => state.getDropdownOptions('categories'),
             label: 'Categoría',
           ),
           'fotoUrl': DynamicFormFieldSchema(
@@ -879,12 +879,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
           ),
           'sucursales_asignadas': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
-            options: state.getDropdownOptions('branches'),
+            optionsResolver: () => state.getDropdownOptions('branches'),
             label: 'Sucursales Disponibles',
           ),
           'fotoUrl': DynamicFormFieldSchema(
@@ -898,7 +898,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
           ),
         };
@@ -908,7 +908,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
+            optionsResolver: () => state.getDropdownOptions('companies'),
             label: 'Empresa',
           ),
           'esGlobal': DynamicFormFieldSchema(
@@ -956,7 +956,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'sync_status', 'control_inventario', 'clientes_enabled',
     'pesos_rapidos_enabled', 'adminId',
     // IDs canónicos autogenerados por el backend al crear
-    'IdProducto', 'IdCategoria', 'IdCombo', 'IdInventario',
+    'IdProducto', 'IdCombo', 'IdInventario',
     'IdTransaccion', 'IdVenta', 'IdCliente', 'IdUsuario',
     // Autogenerados (no debe llenar el admin)
     'CodigoSucursal',
@@ -1036,7 +1036,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return {
           'NombreCategoria': '',
           'descripcion': '',
-          'color': '#3498DB',
+          'Color': '0xFF3498DB',
           'empresaId': '',
           'activo': 1,
         };

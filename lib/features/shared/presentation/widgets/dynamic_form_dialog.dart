@@ -529,7 +529,8 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final controller = _controllers[key]!;
     final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
     final label = schema.label ?? key.toUpperCase();
-    final options = schema.options ?? [];
+    // Resolve options lazily at render time to always get the latest state
+    final options = schema.resolveOptions();
 
     Map<String, dynamic>? selectedItem;
     if (controller.text.isNotEmpty) {
@@ -617,7 +618,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final items = _jsonArrayFields[key]!;
     final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
     final label = schema.label ?? key.toUpperCase();
-    final options = schema.options ?? [];
+    final options = schema.resolveOptions();
 
     List<Map<String, dynamic>> selectedItems = [];
     for (String id in items) {
@@ -749,14 +750,17 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
     // Colores predefinidos frecuentes
     final predefined = [
-      '#E74C3C', '#E67E22', '#F1C40F', '#2ECC71', '#1ABC9C',
-      '#3498DB', '#9B59B6', '#34495E', '#95A5A6', '#2C3E50',
-      '#FF6B6B', '#A8E6CF', '#FFD93D', '#6C5CE7', '#FD79A8',
+      '0xFFE74C3C', '0xFFE67E22', '0xFFF1C40F', '0xFF2ECC71', '0xFF1ABC9C',
+      '0xFF3498DB', '0xFF9B59B6', '0xFF34495E', '0xFF95A5A6', '0xFF2C3E50',
+      '0xFFFF6B6B', '0xFFA8E6CF', '0xFFFFD93D', '0xFF6C5CE7', '0xFFFD79A8',
     ];
 
     Color _parseHex(String hex) {
       try {
-        final clean = hex.replaceAll('#', '').padLeft(6, '0');
+        final clean = hex.replaceAll('#', '').replaceAll('0x', '').replaceAll('0X', '').padLeft(6, '0');
+        if (clean.length == 8) {
+          return Color(int.parse(clean, radix: 16));
+        }
         return Color(int.parse('FF$clean', radix: 16));
       } catch (_) {
         return Colors.grey;
@@ -767,7 +771,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       padding: const EdgeInsets.only(bottom: 16),
       child: StatefulBuilder(
         builder: (ctx, setInner) {
-          final current = controller.text.isNotEmpty ? controller.text : '#CCCCCC';
+          final current = controller.text.isNotEmpty ? controller.text : '0xFFCCCCCC';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -814,7 +818,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                       controller: controller,
                       style: GoogleFonts.outfit(fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: '#RRGGBB',
+                        hintText: '0xFFRRGGBB',
                         filled: true, fillColor: Colors.white,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),

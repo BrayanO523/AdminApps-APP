@@ -22,6 +22,11 @@ class EpdDashboardState implements ResolvableState {
   final Map<String, String> usuarioNames;
   final Map<String, String> categoriaNames;
 
+  /// Documentos completos cacheados para poder filtrar por empresa
+  final List<Map<String, dynamic>> cachedCategories;
+  final List<Map<String, dynamic>> cachedBranches;
+  final List<Map<String, dynamic>> cachedUsers;
+
   final List<Map<String, dynamic>> selectedEmpresas;
 
   const EpdDashboardState({
@@ -37,6 +42,9 @@ class EpdDashboardState implements ResolvableState {
     this.sucursalNames = const {},
     this.usuarioNames = const {},
     this.categoriaNames = const {},
+    this.cachedCategories = const [],
+    this.cachedBranches = const [],
+    this.cachedUsers = const [],
     this.selectedEmpresas = const [],
   });
 
@@ -53,6 +61,9 @@ class EpdDashboardState implements ResolvableState {
     Map<String, String>? sucursalNames,
     Map<String, String>? usuarioNames,
     Map<String, String>? categoriaNames,
+    List<Map<String, dynamic>>? cachedCategories,
+    List<Map<String, dynamic>>? cachedBranches,
+    List<Map<String, dynamic>>? cachedUsers,
     List<Map<String, dynamic>>? selectedEmpresas,
     bool clearError = false,
     bool clearSearch = false,
@@ -71,6 +82,9 @@ class EpdDashboardState implements ResolvableState {
       sucursalNames: sucursalNames ?? this.sucursalNames,
       usuarioNames: usuarioNames ?? this.usuarioNames,
       categoriaNames: categoriaNames ?? this.categoriaNames,
+      cachedCategories: cachedCategories ?? this.cachedCategories,
+      cachedBranches: cachedBranches ?? this.cachedBranches,
+      cachedUsers: cachedUsers ?? this.cachedUsers,
       selectedEmpresas: clearEmpresas
           ? const []
           : (selectedEmpresas ?? this.selectedEmpresas),
@@ -86,30 +100,80 @@ class EpdDashboardState implements ResolvableState {
         .label;
   }
 
-  /// Devuelve una lista de opciones formateadas para Dropdowns `[{'value': ID, 'label': Nombre}]`
+  /// Devuelve opciones para Dropdowns filtradas por empresa seleccionada cuando aplica.
   List<Map<String, dynamic>> getDropdownOptions(String section) {
-    Map<String, String> targetMap;
+    // Obtener los IDs de empresas seleccionadas actualmente
+    final selectedIds = selectedEmpresas
+        .map((e) => e['value']?.toString() ?? e['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
     switch (section) {
       case 'companies':
-        targetMap = empresaNames;
-        break;
-      case 'branches':
-        targetMap = sucursalNames;
-        break;
-      case 'users':
-        targetMap = usuarioNames;
-        break;
+        // Empresas no se filtran por empresa (son el nivel superior)
+        final options = empresaNames.entries
+            .map((e) => {'value': e.key, 'label': e.value})
+            .toList();
+        options.sort((a, b) => a['label'].toString().compareTo(b['label'].toString()));
+        return options;
+
       case 'categories':
-        targetMap = categoriaNames;
-        break;
+        // Filtrar por empresa si hay selección activa
+        final docs = selectedIds.isEmpty
+            ? cachedCategories
+            : cachedCategories.where((d) {
+                final empId = d['empresaId']?.toString() ?? '';
+                return selectedIds.contains(empId);
+              }).toList();
+        return _docsToOptions(docs);
+
+      case 'branches':
+        final docs = selectedIds.isEmpty
+            ? cachedBranches
+            : cachedBranches.where((d) {
+                final empId = d['empresaId']?.toString() ?? '';
+                return selectedIds.contains(empId);
+              }).toList();
+        return _docsToOptions(docs);
+
+      case 'users':
+        final docs = selectedIds.isEmpty
+            ? cachedUsers
+            : cachedUsers.where((d) {
+                final empId = d['empresaId']?.toString() ?? '';
+                return selectedIds.contains(empId);
+              }).toList();
+        return _docsToOptions(docs);
+
       default:
         return [];
     }
-    final options = targetMap.entries
-        .map((e) => {'value': e.key, 'label': e.value})
-        .toList();
+  }
+
+  /// Convierte una lista de documentos a opciones de dropdown [{value, label}].
+  List<Map<String, dynamic>> _docsToOptions(List<Map<String, dynamic>> docs) {
+    final options = docs.map((d) {
+      final id = d['id']?.toString() ?? '';
+      final name = _extractDocName(d) ?? id;
+      return {'value': id, 'label': name};
+    }).where((o) => o['value']!.isNotEmpty).toList();
     options.sort((a, b) => a['label'].toString().compareTo(b['label'].toString()));
     return options;
+  }
+
+  static String? _extractDocName(Map<String, dynamic> doc) {
+    const nameFields = [
+      'NombreCategoria', 'nombreCategoria', 'Nombrecategoria',
+      'Nombre', 'nombre', 'name', 'NombreCompleto', 'nombreComercial',
+      'razonSocial', 'email',
+    ];
+    for (final f in nameFields) {
+      final val = doc[f];
+      if (val != null && val.toString().trim().isNotEmpty) {
+        return val.toString().trim();
+      }
+    }
+    return null;
   }
 
   /// Resuelve un ID a un nombre legible según el campo.
@@ -169,11 +233,81 @@ class EpdDashboardState implements ResolvableState {
 class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
   final EpdRemoteDataSource _dataSource;
 
-  EpdDashboardViewModel(this._dataSource) : super(const EpdDashboardState());
+  EpdDashboardViewModel(this._dataSource) : super(const EpdDashboardState()) {
+    _loadDependencies();
+  }
+
+  /// Carga dependencias globales (empresas, sucursales, categorías) para los dropdowns.
+  Future<void> _loadDependencies() async {
+    final Map<String, String> newEmpresas = Map.from(state.empresaNames);
+    final List<Map<String, dynamic>> newCachedBranches = [];
+    final List<Map<String, dynamic>> newCachedCategories = [];
+    final List<Map<String, dynamic>> newCachedUsers = [];
+    final Map<String, String> newBranches = {};
+    final Map<String, String> newCategories = {};
+    final Map<String, String> newUsers = {};
+
+    await Future.wait([
+      _dataSource.getCollection('companies', limit: 300).then((res) {
+        res.fold((_) {}, (resp) {
+          for (final doc in resp.data) {
+            final id = doc['id']?.toString() ?? '';
+            if (id.isNotEmpty) newEmpresas[id] = _extractName(doc) ?? id;
+          }
+        });
+      }),
+      _dataSource.getCollection('branches', limit: 300).then((res) {
+        res.fold((_) {}, (resp) {
+          for (final doc in resp.data) {
+            final id = doc['id']?.toString() ?? '';
+            if (id.isNotEmpty) {
+              newBranches[id] = _extractName(doc) ?? id;
+              newCachedBranches.add(doc);
+            }
+          }
+        });
+      }),
+      _dataSource.getCollection('categories', limit: 300).then((res) {
+        res.fold((_) {}, (resp) {
+          for (final doc in resp.data) {
+            final id = doc['id']?.toString() ?? '';
+            if (id.isNotEmpty) {
+              newCategories[id] = _extractName(doc) ?? id;
+              newCachedCategories.add(doc);
+            }
+          }
+        });
+      }),
+      _dataSource.getCollection('users', limit: 300).then((res) {
+        res.fold((_) {}, (resp) {
+          for (final doc in resp.data) {
+            final id = doc['id']?.toString() ?? '';
+            if (id.isNotEmpty) {
+              newUsers[id] = _extractName(doc) ?? id;
+              newCachedUsers.add(doc);
+            }
+          }
+        });
+      }),
+    ]);
+
+    state = state.copyWith(
+      empresaNames: newEmpresas,
+      sucursalNames: newBranches,
+      categoriaNames: newCategories,
+      usuarioNames: newUsers,
+      cachedCategories: newCachedCategories,
+      cachedBranches: newCachedBranches,
+      cachedUsers: newCachedUsers,
+    );
+  }
+
 
   /// Campos que contienen el nombre legible de un documento.
   static const _nameFields = [
     'NombreCategoria',
+    'nombreCategoria', // Added to handle casing
+    'Nombrecategoria',
     'nombre',
     'name',
     'razonSocial',
