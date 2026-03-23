@@ -1505,6 +1505,15 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     final initialData = Map<String, dynamic>.from(row);
+    if ((initialData['nombre'] == null || initialData['nombre'] == '') &&
+        initialData['NombreCombo'] != null) {
+      initialData['nombre'] = initialData['NombreCombo'];
+    }
+    if (initialData['precioCombo'] == null && initialData['precio'] != null) {
+      initialData['precioCombo'] = initialData['precio'];
+    }
+    initialData.remove('NombreCombo');
+    initialData.remove('precio');
     initialData['productos_combo'] = _extractComboProductIds(row['items']);
     return initialData;
   }
