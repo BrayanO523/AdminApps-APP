@@ -952,6 +952,14 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       // ── Combos ────────────────────────────────────────────────────────────
       case 'combos':
         return {
+          'nombre': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre del Combo',
+          ),
+          'precioCombo': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Precio del Combo',
+          ),
           'empresaId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () => state.getDropdownOptions('companies'),
@@ -1200,9 +1208,9 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       // ── Combos ────────────────────────────────────────────────────────────
       case 'combos':
         return {
-          'NombreCombo': '',
+          'nombre': '',
           'descripcion': '',
-          'precio': 0.0,
+          'precioCombo': 0.0,
           'fotoUrl': '',
           'productos_combo': <String>[],
           'sucursales_asignadas': '[]',
@@ -1443,6 +1451,25 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     if (state.activeSection != 'combos') return payload;
+
+    // Normalizar alias legacy -> esquema canónico de combos usado por la app móvil.
+    final comboName = (payload['nombre'] ?? payload['NombreCombo'])
+        ?.toString()
+        .trim();
+    if (comboName != null && comboName.isNotEmpty) {
+      payload['nombre'] = comboName;
+    }
+    payload.remove('NombreCombo');
+
+    final rawPrice = payload['precioCombo'] ?? payload['precio'];
+    if (rawPrice is num) {
+      payload['precioCombo'] = rawPrice.toDouble();
+    } else if (rawPrice != null) {
+      payload['precioCombo'] = double.tryParse(rawPrice.toString()) ?? 0.0;
+    } else {
+      payload['precioCombo'] = 0.0;
+    }
+    payload.remove('precio');
 
     final selectedProductIds = _parseStringList(
       payload.remove('productos_combo'),
