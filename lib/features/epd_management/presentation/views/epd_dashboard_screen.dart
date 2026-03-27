@@ -131,15 +131,24 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     return !_technicalFilterFields.contains(normalized.toLowerCase());
   }
 
-  static const Set<String> _createDisabledSections = {
-    'sales',
-    'waste_reports',
-    'inventory_transactions',
-    'inventory_transfers',
+  static const Set<String> _mutableSections = {
+    'companies',
+    'branches',
+    'users',
+    'clients',
+    'categories',
+    'products',
+    'combos',
+    'expense_categories',
+    'expenses',
+    'suppliers',
+    'supplier_assignments',
   };
 
   bool _isCreateDisabled(String sectionId) =>
-      _createDisabledSections.contains(sectionId);
+      !_mutableSections.contains(sectionId);
+
+  bool _isEditEnabled(String sectionId) => _mutableSections.contains(sectionId);
 
   void _clearFilters() {
     _searchController.clear();
@@ -283,8 +292,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                               extraActionIcon: Icons.swap_vert_circle_rounded,
                               extraActionColor: const Color(0xFF059669),
                               extraActionTooltip: 'Ajustar Stock',
-                              onEdit: (row) => _showEditDialog(row),
-                              onDelete: (row) => _showDeleteDialog(row),
+                              onEdit: _isEditEnabled(state.activeSection)
+                                  ? (row) => _showEditDialog(row)
+                                  : null,
+                              onDelete: _isEditEnabled(state.activeSection)
+                                  ? (row) => _showDeleteDialog(row)
+                                  : null,
                               onFilterToggle: (column, rawValue) {
                                 ref
                                     .read(epdDashboardProvider.notifier)
