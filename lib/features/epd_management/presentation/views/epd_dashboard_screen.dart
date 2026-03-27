@@ -12,11 +12,7 @@ import '../../domain/entities/epd_section.dart';
 import '../config/epd_collection_form_registry.dart';
 import '../mappers/epd_collection_payload_mapper.dart';
 import '../viewmodels/epd_dashboard_viewmodel.dart';
-import '../widgets/combo_form_dialog.dart';
 import '../widgets/epd_sidebar.dart';
-import '../widgets/expense_category_form_dialog.dart';
-import '../widgets/expense_form_dialog.dart';
-import '../widgets/supplier_assignment_form_dialog.dart';
 import '../../../shared/presentation/widgets/dynamic_data_table.dart';
 import '../../../shared/presentation/widgets/dynamic_form_dialog.dart';
 import '../../../shared/presentation/widgets/dynamic_form_field_schema.dart';
@@ -1067,7 +1063,13 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         : _parseStringList(payload.remove('productos_combo'));
     final existingItems = _parseMapList(existingRow?['items']);
     final comboId =
-        existingRow?['id']?.toString() ?? payload['id']?.toString() ?? '';
+        existingRow?['idCombo']?.toString() ??
+        existingRow?['IdCombo']?.toString() ??
+        payload['idCombo']?.toString() ??
+        payload['IdCombo']?.toString() ??
+        existingRow?['id']?.toString() ??
+        payload['id']?.toString() ??
+        '';
 
     if (editedItems.isNotEmpty) {
       final existingByProduct = <String, Map<String, dynamic>>{};
@@ -1171,6 +1173,41 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     return initialData;
   }
 
+  Map<String, dynamic> _buildUnifiedFormData({
+    required EpdDashboardState state,
+    required Map<String, dynamic> sourceData,
+    required List<String> hiddenFields,
+  }) {
+    final order = EpdCollectionFormRegistry.formFieldOrder(state.activeSection);
+    if (order.isEmpty) {
+      return Map<String, dynamic>.from(sourceData);
+    }
+
+    final hiddenSet = <String>{...hiddenFields, 'id'};
+    final prepared = <String, dynamic>{};
+
+    for (final key in order) {
+      if (sourceData.containsKey(key)) {
+        prepared[key] = sourceData[key];
+      }
+    }
+
+    for (final key in hiddenSet) {
+      if (sourceData.containsKey(key) && !prepared.containsKey(key)) {
+        prepared[key] = sourceData[key];
+      }
+    }
+
+    // Preserve row/document identifiers and context keys for correct payload mapping.
+    for (final key in const ['id', 'empresaId', 'adminId']) {
+      if (sourceData.containsKey(key) && !prepared.containsKey(key)) {
+        prepared[key] = sourceData[key];
+      }
+    }
+
+    return prepared;
+  }
+
   Future<Map<String, dynamic>?> _showSectionFormDialog({
     required EpdDashboardState state,
     required Map<String, dynamic> initialData,
@@ -1178,68 +1215,17 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     required String title,
     required List<String> hiddenFields,
   }) {
-    if (state.activeSection == 'expense_categories') {
-      return showDialog<Map<String, dynamic>>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        builder: (_) => ExpenseCategoryFormDialog(
-          initialData: initialData,
-          isEdit: isEdit,
-          title: title,
-        ),
-      );
-    }
-
-    if (state.activeSection == 'expenses') {
-      return showDialog<Map<String, dynamic>>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        builder: (_) => ExpenseFormDialog(
-          initialData: initialData,
-          isEdit: isEdit,
-          title: title,
-          branchOptions: state.getDropdownOptions('branches'),
-          categoryOptions: state.getDropdownOptions('expense_categories'),
-          userOptions: state.getDropdownOptions('users'),
-        ),
-      );
-    }
-
-    if (state.activeSection == 'combos') {
-      return showDialog<Map<String, dynamic>>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        builder: (_) => ComboFormDialog(
-          initialData: initialData,
-          isEdit: isEdit,
-          title: title,
-          productOptions: state.getDropdownOptions('products'),
-          branchOptions: state.getDropdownOptions('branches'),
-          onUploadImage: _uploadImageToStorage,
-        ),
-      );
-    }
-
-    if (state.activeSection == 'supplier_assignments') {
-      return showDialog<Map<String, dynamic>>(
-        context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        builder: (_) => SupplierAssignmentFormDialog(
-          initialData: initialData,
-          isEdit: isEdit,
-          title: title,
-          supplierOptions: state.getDropdownOptions('suppliers'),
-          branchOptions: state.getDropdownOptions('branches'),
-          productOptions: state.getDropdownOptions('products'),
-        ),
-      );
-    }
+    final preparedInitialData = _buildUnifiedFormData(
+      state: state,
+      sourceData: initialData,
+      hiddenFields: hiddenFields,
+    );
 
     return showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
       builder: (_) => DynamicFormDialog(
-        initialData: initialData,
+        initialData: preparedInitialData,
         isEdit: isEdit,
         title: title,
         fieldSchemas: _buildFieldSchemas(state),

@@ -24,10 +24,8 @@ class EpdCollectionFormRegistry {
     'isTemplate',
     'source_template_id',
     'sync_status',
-    'control_inventario',
-    'clientes_enabled',
-    'pesos_rapidos_enabled',
     'adminId',
+    'empresaId',
     'IdProducto',
     'IdCombo',
     'IdInventario',
@@ -35,19 +33,131 @@ class EpdCollectionFormRegistry {
     'IdVenta',
     'IdCliente',
     'IdUsuario',
-    'CodigoSucursal',
     'selected_categories',
     'IdSucursalesAsignadas',
     'IdSucursal',
     'items',
+    'combo_items_editor',
   ];
 
   static List<String> hiddenSystemFieldsForSection(String sectionId) {
     final hidden = List<String>.from(_baseHiddenSystemFields);
+
+    if (sectionId == 'branches') {
+      hidden.remove('control_inventario');
+      hidden.remove('clientes_enabled');
+      hidden.remove('pesos_rapidos_enabled');
+      hidden.remove('fiscal_enabled');
+      hidden.remove('CodigoSucursal');
+    }
+
     if (sectionId == 'expenses') {
       hidden.remove('estado');
+      hidden.remove('date');
     }
+
+    if (sectionId == 'companies') {
+      hidden.remove('activo');
+    }
+
+    if (sectionId == 'products') {
+      hidden.remove('Activo');
+    }
+
     return hidden;
+  }
+
+  static List<String> formFieldOrder(String sectionId) {
+    switch (sectionId) {
+      case 'companies':
+        return const [
+          'nombreComercial',
+          'razonSocial',
+          'rtn',
+          'telefono',
+          'correo',
+          'direccion',
+          'logoUrl',
+          'activo',
+        ];
+      case 'branches':
+        return const [
+          'Nombre',
+          'CodigoSucursal',
+          'direccion_referencia',
+          'telefono_contacto',
+          'control_inventario',
+          'clientes_enabled',
+          'pesos_rapidos_enabled',
+          'fiscal_enabled',
+          'activo',
+          'assigned_seller_ids',
+          'allowed_categories',
+        ];
+      case 'users':
+        return const [
+          'NombreCompleto',
+          'CodigoUsuario',
+          'pin',
+          'rol',
+          'activo',
+        ];
+      case 'clients':
+        return const ['NombreCompleto', 'RTN', 'Movil', 'activo'];
+      case 'categories':
+        return const ['NombreCategoria', 'OrdenVisual', 'Color', 'activo'];
+      case 'products':
+        return const [
+          'IdCategoria',
+          'NombreProducto',
+          'descripcion',
+          'fotoUrl',
+          'preciounidad',
+          'precioLibra',
+          'costo',
+          'ModoVventa',
+          'is_promo',
+          'promo_price',
+          'promo_price_lb',
+          'Activo',
+        ];
+      case 'combos':
+        return const [
+          'nombre',
+          'descripcion',
+          'fotoUrl',
+          'precioCombo',
+          'productos_combo',
+          'sucursales_asignadas',
+          'activo',
+        ];
+      case 'expense_categories':
+        return const ['name', 'color', 'icon', 'isActive'];
+      case 'expenses':
+        return const [
+          'amount',
+          'categoryId',
+          'date',
+          'description',
+          'branchId',
+          'registeredByUserId',
+          'estado',
+        ];
+      case 'suppliers':
+        return const [
+          'nombre',
+          'telefono',
+          'email',
+          'direccion',
+          'notas',
+          'esGlobal',
+          'activo',
+        ];
+      case 'supplier_assignments':
+        return const ['proveedorId', 'sucursalId', 'productoIds', 'activo'];
+      default:
+        return const [];
+    }
   }
 
   static Map<String, DynamicFormFieldSchema> buildFieldSchemas({
@@ -57,6 +167,40 @@ class EpdCollectionFormRegistry {
     switch (sectionId) {
       case 'branches':
         return {
+          'Nombre': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre de Sucursal',
+            isRequired: true,
+          ),
+          'CodigoSucursal': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Codigo Sucursal',
+            isReadOnly: true,
+          ),
+          'direccion_referencia': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Direccion o Referencia',
+          ),
+          'telefono_contacto': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Telefono de Contacto',
+          ),
+          'control_inventario': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Control de Inventario',
+          ),
+          'clientes_enabled': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Gestion de Clientes',
+          ),
+          'pesos_rapidos_enabled': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Pesos Rapidos',
+          ),
+          'fiscal_enabled': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Facturacion Fiscal (CAI / SAR)',
+          ),
           'assigned_seller_ids': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
             optionsResolver: () => state.getDropdownOptions('users'),
@@ -67,117 +211,141 @@ class EpdCollectionFormRegistry {
             optionsResolver: () => state.getDropdownOptions('categories'),
             label: 'Categorias Permitidas',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'users':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa Activa',
+          'NombreCompleto': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre Completo',
+            isRequired: true,
           ),
-          'rol': DynamicFormFieldSchema(
+          'CodigoUsuario': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Codigo de Acceso',
+            isRequired: true,
+          ),
+          'pin': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'PIN',
+          ),
+          'rol': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.radioSelect,
-            options: const [
+            options: [
               {'value': 'VENDEDOR', 'label': 'Vendedor'},
               {'value': 'ADMIN', 'label': 'Administrador'},
             ],
             label: 'Rol',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'categories':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
+          'NombreCategoria': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre de Categoria',
+            isRequired: true,
           ),
-          'Color': DynamicFormFieldSchema(
+          'OrdenVisual': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Orden Visual',
+          ),
+          'Color': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.colorPicker,
-            label: 'Color de Categoria',
+            label: 'Color',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'products':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
           'IdCategoria': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () => state.getDropdownOptions('categories'),
             label: 'Categoria',
+            isRequired: true,
           ),
-          'fotoUrl': DynamicFormFieldSchema(
+          'NombreProducto': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre del Producto',
+            isRequired: true,
+          ),
+          'descripcion': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Descripcion',
+          ),
+          'fotoUrl': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.imageUpload,
             label: 'Foto del Producto',
             storagePath: 'products/{empresaId}/{id}/{timestamp}.jpg',
           ),
-          'ModoVventa': DynamicFormFieldSchema(
+          'preciounidad': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio Unidad',
+          ),
+          'precioLibra': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio Libra',
+          ),
+          'costo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Costo Compra',
+          ),
+          'ModoVventa': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': 'UNIDAD', 'label': 'Por Unidad'},
-              {'value': 'PESO', 'label': 'Por Libra/Peso'},
-              {'value': 'AMBOS', 'label': 'Ambos'},
+            options: [
+              {'value': 'UNIDAD', 'label': 'Solo Unidad'},
+              {'value': 'PESO', 'label': 'Solo Peso'},
+              {'value': 'AMBOS', 'label': 'Unidad y Peso'},
             ],
             label: 'Modo de Venta',
             isReadOnly: true,
           ),
-          'is_promo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '0', 'label': 'No es Promocion'},
-              {'value': '1', 'label': 'Si es Promocion'},
-            ],
-            label: 'En Promocion?',
+          'is_promo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Producto en Promocion',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'promo_price': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio Promocion Unidad',
+          ),
+          'promo_price_lb': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio Promocion Libra',
+          ),
+          'Activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'combos':
         return {
-          'nombre': DynamicFormFieldSchema(
+          'nombre': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
             label: 'Nombre del Combo',
+            isRequired: true,
           ),
-          'precioCombo': DynamicFormFieldSchema(
+          'descripcion': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Precio del Combo',
+            label: 'Descripcion',
           ),
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
+          'fotoUrl': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Foto del Combo',
+            storagePath: 'combos/{empresaId}/{id}/{timestamp}.jpg',
+          ),
+          'precioCombo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio del Combo',
+            isRequired: true,
           ),
           'productos_combo': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
@@ -187,52 +355,47 @@ class EpdCollectionFormRegistry {
           'sucursales_asignadas': DynamicFormFieldSchema(
             type: DynamicFormFieldType.multiselectDropdown,
             optionsResolver: () => state.getDropdownOptions('branches'),
-            label: 'Sucursales Disponibles',
+            label: 'Sucursales Asignadas',
           ),
-          'fotoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Foto del Combo',
-            storagePath: 'combos/{empresaId}/{id}/{timestamp}.jpg',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'clients':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
+          'NombreCompleto': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre Completo',
+            isRequired: true,
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'RTN': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'RTN',
+          ),
+          'Movil': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Telefono',
+          ),
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'expense_categories':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
+          'name': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre',
+            isRequired: true,
           ),
-          'color': DynamicFormFieldSchema(
+          'color': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.colorPicker,
             label: 'Color',
           ),
-          'icon': DynamicFormFieldSchema(
+          'icon': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.radioSelect,
-            options: const [
+            options: [
               {'value': 'receipt_long', 'label': 'Recibo'},
               {'value': 'payments', 'label': 'Pago'},
               {'value': 'shopping_bag', 'label': 'Compra'},
@@ -242,82 +405,87 @@ class EpdCollectionFormRegistry {
             ],
             label: 'Icono',
           ),
-          'isActive': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'isActive': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'expenses':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'branchId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('branches'),
-            label: 'Sucursal',
+          'amount': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Monto',
+            isRequired: true,
           ),
           'categoryId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () =>
                 state.getDropdownOptions('expense_categories'),
             label: 'Tipo de Gasto',
+            isRequired: true,
+          ),
+          'date': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.date,
+            label: 'Fecha',
+          ),
+          'description': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Descripcion',
+          ),
+          'branchId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () => state.getDropdownOptions('branches'),
+            label: 'Sucursal',
           ),
           'registeredByUserId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () => state.getDropdownOptions('users'),
             label: 'Registrado por',
           ),
-          'estado': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'estado': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'suppliers':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
+          'nombre': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre',
+            isRequired: true,
           ),
-          'esGlobal': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '0', 'label': 'Proveedor Local'},
-              {'value': '1', 'label': 'Proveedor Global'},
-            ],
-            label: 'Alcance del Proveedor',
+          'telefono': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Telefono',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'email': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Email',
+          ),
+          'direccion': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Direccion',
+          ),
+          'notas': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Notas',
+          ),
+          'esGlobal': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Proveedor Global',
+          ),
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'supplier_assignments':
         return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
           'proveedorId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             optionsResolver: () => state.getDropdownOptions('suppliers'),
             label: 'Proveedor',
+            isRequired: true,
           ),
           'sucursalId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
@@ -329,28 +497,45 @@ class EpdCollectionFormRegistry {
             optionsResolver: () => state.getDropdownOptions('products'),
             label: 'Productos',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
       case 'companies':
         return {
-          'logoUrl': DynamicFormFieldSchema(
+          'nombreComercial': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre Comercial',
+            isRequired: true,
+          ),
+          'razonSocial': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Razon Social',
+          ),
+          'rtn': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'RTN',
+          ),
+          'telefono': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Telefono',
+          ),
+          'correo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Correo',
+          ),
+          'direccion': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Direccion',
+          ),
+          'logoUrl': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.imageUpload,
             label: 'Logo de la Empresa',
             storagePath: 'companies/{id}/{timestamp}.jpg',
           ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
+          'activo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
             label: 'Estado',
           ),
         };
@@ -360,6 +545,8 @@ class EpdCollectionFormRegistry {
   }
 
   static Map<String, dynamic> baseFields(String sectionId) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
     switch (sectionId) {
       case 'companies':
         return {
@@ -376,6 +563,7 @@ class EpdCollectionFormRegistry {
       case 'branches':
         return {
           'Nombre': '',
+          'CodigoSucursal': 'SUC-$now',
           'direccion_referencia': '',
           'telefono_contacto': '',
           'empresaId': '',
@@ -385,6 +573,7 @@ class EpdCollectionFormRegistry {
           'control_inventario': 1,
           'clientes_enabled': 1,
           'pesos_rapidos_enabled': 0,
+          'fiscal_enabled': 0,
           'sync_status': 1,
           'activo': 1,
         };
@@ -396,8 +585,8 @@ class EpdCollectionFormRegistry {
           'rol': 'VENDEDOR',
           'empresaId': '',
           'IdSucursal': '',
-          'IdSucursalesAsignadas': '[]',
-          'selected_categories': '[]',
+          'IdSucursalesAsignadas': <String>[],
+          'selected_categories': <String>[],
           'activo': 1,
         };
       case 'clients':
@@ -405,9 +594,6 @@ class EpdCollectionFormRegistry {
           'NombreCompleto': '',
           'RTN': '',
           'Movil': '',
-          'telefono': '',
-          'correo': '',
-          'direccion': '',
           'empresaId': '',
           'adminId': '',
           'activo': 1,
@@ -436,8 +622,8 @@ class EpdCollectionFormRegistry {
       case 'categories':
         return {
           'NombreCategoria': '',
-          'descripcion': '',
           'Color': '0xFF3498DB',
+          'OrdenVisual': 0,
           'empresaId': '',
           'activo': 1,
         };
@@ -468,7 +654,7 @@ class EpdCollectionFormRegistry {
           'precioCombo': 0.0,
           'fotoUrl': '',
           'productos_combo': <String>[],
-          'sucursales_asignadas': '[]',
+          'sucursales_asignadas': <String>[],
           'empresaId': '',
           'activo': 1,
           'sync_status': 1,
@@ -481,7 +667,7 @@ class EpdCollectionFormRegistry {
           'direccion': '',
           'notas': '',
           'empresaId': '',
-          'esGlobal': 0,
+          'esGlobal': 1,
           'activo': 1,
         };
       case 'supplier_assignments':

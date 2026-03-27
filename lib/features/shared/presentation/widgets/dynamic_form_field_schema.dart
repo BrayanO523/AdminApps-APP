@@ -1,57 +1,60 @@
-
 enum DynamicFormFieldType {
-  /// Campo de texto libre (default).
+  /// Free text field.
   text,
-  /// Campo numérico.
+
+  /// Numeric field.
   number,
-  /// Switch o checkbox booleano.
+
+  /// Date field.
+  date,
+
+  /// Boolean switch field.
   boolean,
-  /// Dropdown de una sola selección con lista de opciones.
+
+  /// Single-select dropdown.
   dropdown,
-  /// Dropdown de múltiple selección con lista de opciones.
+
+  /// Multi-select dropdown.
   multiselectDropdown,
-  /// Campo de texto + botón para subir imagen a Firebase Storage.
+
+  /// Image upload field.
   imageUpload,
-  /// Dropdown de opciones predefinidas (pares valor/etiqueta).
+
+  /// Predefined options selector.
   radioSelect,
-  /// Color picker (retorna el color como string hex #RRGGBB).
+
+  /// Color picker field.
   colorPicker,
 }
 
-/// Metadatos (Esquema) para renderizar un campo específico en `DynamicFormDialog`
+/// Schema metadata used by `DynamicFormDialog` to render a field.
 class DynamicFormFieldSchema {
   final DynamicFormFieldType type;
 
-  /// Lista de opciones para dropdowns. Formato esperado: `{ 'value': 'ID', 'label': 'Nombre' }`
-  /// Puede ser null si se provee [optionsResolver].
+  /// Static options for dropdown-like fields.
+  /// Format: `{ 'value': 'ID', 'label': 'Display Name' }`
   final List<Map<String, dynamic>>? options;
 
-  /// Callback que retorna las opciones en tiempo de render (lazy).
-  /// Tiene prioridad sobre [options]. Permite que el dropdown siempre
-  /// obtenga el estado más actualizado sin depender del momento de
-  /// construcción del diálogo.
+  /// Lazy options resolver. Takes priority over [options] when provided.
   final List<Map<String, dynamic>> Function()? optionsResolver;
 
-  /// Título a mostrar sobre el campo. Si es nulo, usará la Key original.
+  /// Optional visible field label.
   final String? label;
 
-  /// Texto de ayuda interno en el input.
+  /// Optional input hint text.
   final String? hintText;
 
-  /// Si es true, el campo será de sólo lectura.
+  /// If true, field is read-only.
   final bool isReadOnly;
 
-  /// Ruta de destino en Firebase Storage para campos de tipo [imageUpload].
-  /// Soporta las siguientes variables interpolables con los datos del formulario:
-  /// - `{id}`        → doc.id (disponible en edición, vacío en creación)
-  /// - `{empresaId}` → valor del campo empresaId en initialData
-  /// - `{timestamp}` → DateTime.now().millisecondsSinceEpoch
-  ///
-  /// Si se omite, se usa el path por defecto: `uploads/{timestamp}.jpg`
-  ///
-  /// Ejemplos:
-  ///   `'companies/{empresaId}/logo.jpg'`  (edición de empresa)
-  ///   `'products/{empresaId}/{timestamp}.jpg'` (producto nuevo)
+  /// If true, field is required.
+  final bool isRequired;
+
+  /// Storage path template for [DynamicFormFieldType.imageUpload].
+  /// Supported variables:
+  /// - `{id}`
+  /// - `{empresaId}`
+  /// - `{timestamp}`
   final String? storagePath;
 
   const DynamicFormFieldSchema({
@@ -61,11 +64,15 @@ class DynamicFormFieldSchema {
     this.label,
     this.hintText,
     this.isReadOnly = false,
+    this.isRequired = false,
     this.storagePath,
   });
 
-  /// Retorna las opciones resolviendo el provider si está disponible,
-  /// de lo contrario usa la lista estática.
-  List<Map<String, dynamic>> resolveOptions() =>
-      optionsResolver != null ? optionsResolver!() : (options ?? []);
+  /// Resolves dynamic options when available, otherwise returns static options.
+  List<Map<String, dynamic>> resolveOptions() {
+    if (optionsResolver != null) {
+      return optionsResolver!();
+    }
+    return options ?? [];
+  }
 }

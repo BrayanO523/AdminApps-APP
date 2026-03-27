@@ -131,6 +131,28 @@ class EpdDashboardState implements ResolvableState {
         .label;
   }
 
+  static const Map<String, List<String>> _collectionIdFields = {
+    'companies': ['empresaId', 'id'],
+    'branches': ['IdSucursal', 'CodigoSucursal', 'id'],
+    'users': ['IdUsuario', 'id'],
+    'categories': ['idCategoria', 'IdCategoria', 'id'],
+    'products': ['IdProducto', 'id'],
+    'suppliers': ['idProveedor', 'proveedorId', 'id'],
+    'expense_categories': ['id'],
+    'expenses': ['id'],
+    'combos': ['idCombo', 'IdCombo', 'id'],
+    'supplier_assignments': ['id'],
+  };
+
+  String _extractCollectionId(String collection, Map<String, dynamic> doc) {
+    final candidates = _collectionIdFields[collection] ?? const ['id'];
+    for (final key in candidates) {
+      final value = doc[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   /// Devuelve opciones para dropdowns filtradas por empresa seleccionada.
   List<Map<String, dynamic>> getDropdownOptions(String section) {
     // Soporta diferentes claves de empresa en el contexto seleccionado.
@@ -155,7 +177,7 @@ class EpdDashboardState implements ResolvableState {
                 final empId = _extractEmpresaIdFromDoc(d);
                 return selectedIds.contains(empId);
               }).toList();
-        return _docsToOptions(docs);
+        return _docsToOptions(docs, section: 'categories');
 
       case 'branches':
         final docs = selectedIds.isEmpty
@@ -164,7 +186,7 @@ class EpdDashboardState implements ResolvableState {
                 final empId = _extractEmpresaIdFromDoc(d);
                 return selectedIds.contains(empId);
               }).toList();
-        return _docsToOptions(docs);
+        return _docsToOptions(docs, section: 'branches');
 
       case 'users':
         final docs = selectedIds.isEmpty
@@ -173,7 +195,7 @@ class EpdDashboardState implements ResolvableState {
                 final empId = _extractEmpresaIdFromDoc(d);
                 return selectedIds.contains(empId);
               }).toList();
-        return _docsToOptions(docs);
+        return _docsToOptions(docs, section: 'users');
 
       case 'products':
         final docs = selectedIds.isEmpty
@@ -184,7 +206,7 @@ class EpdDashboardState implements ResolvableState {
               }).toList();
         final options = docs
             .map((d) {
-              final id = (d['IdProducto'] ?? d['id'] ?? '').toString().trim();
+              final id = _extractCollectionId('products', d);
               final name = _extractDocName(d) ?? id;
               return {'value': id, 'label': name};
             })
@@ -204,9 +226,7 @@ class EpdDashboardState implements ResolvableState {
               }).toList();
         final options = docs
             .map((d) {
-              final id = (d['idProveedor'] ?? d['proveedorId'] ?? d['id'] ?? '')
-                  .toString()
-                  .trim();
+              final id = _extractCollectionId('suppliers', d);
               final name = _extractDocName(d) ?? id;
               return {'value': id, 'label': name};
             })
@@ -224,7 +244,7 @@ class EpdDashboardState implements ResolvableState {
                 final empId = _extractEmpresaIdFromDoc(d);
                 return selectedIds.contains(empId);
               }).toList();
-        return _docsToOptions(docs);
+        return _docsToOptions(docs, section: 'expense_categories');
 
       default:
         return [];
@@ -243,10 +263,13 @@ class EpdDashboardState implements ResolvableState {
   }
 
   /// Convierte una lista de documentos a opciones de dropdown [{value, label}].
-  List<Map<String, dynamic>> _docsToOptions(List<Map<String, dynamic>> docs) {
+  List<Map<String, dynamic>> _docsToOptions(
+    List<Map<String, dynamic>> docs, {
+    required String section,
+  }) {
     final options = docs
         .map((d) {
-          final id = d['id']?.toString() ?? '';
+          final id = _extractCollectionId(section, d);
           final name = _extractDocName(d) ?? id;
           return {'value': id, 'label': name};
         })
@@ -391,7 +414,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('companies', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('companies', doc);
             if (id.isNotEmpty) newEmpresas[id] = _extractName(doc) ?? id;
           }
         });
@@ -399,7 +422,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('branches', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('branches', doc);
             if (id.isNotEmpty) {
               newBranches[id] = _extractName(doc) ?? id;
               newCachedBranches.add(doc);
@@ -410,7 +433,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('categories', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('categories', doc);
             if (id.isNotEmpty) {
               newCategories[id] = _extractName(doc) ?? id;
               newCachedCategories.add(doc);
@@ -421,7 +444,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('users', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('users', doc);
             if (id.isNotEmpty) {
               newUsers[id] = _extractName(doc) ?? id;
               newCachedUsers.add(doc);
@@ -432,7 +455,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('products', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('products', doc);
             if (id.isNotEmpty) {
               newProducts[id] = _extractName(doc) ?? id;
               newCachedProducts.add(doc);
@@ -443,7 +466,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('suppliers', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('suppliers', doc);
             if (id.isNotEmpty) {
               newSuppliers[id] = _extractName(doc) ?? id;
               newCachedSuppliers.add(doc);
@@ -454,7 +477,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       _dataSource.getCollection('expense_categories', limit: 300).then((res) {
         res.fold((_) {}, (resp) {
           for (final doc in resp.data) {
-            final id = doc['id']?.toString() ?? '';
+            final id = state._extractCollectionId('expense_categories', doc);
             if (id.isNotEmpty) {
               newExpenseTypes[id] = _extractName(doc) ?? id;
               newCachedExpenseTypes.add(doc);

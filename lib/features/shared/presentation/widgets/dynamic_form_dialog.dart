@@ -241,12 +241,16 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     for (final entry in _controllers.entries) {
       final key = entry.key;
       final textValue = entry.value.text;
+      final normalizedNumeric = textValue.trim().replaceAll(',', '.');
       final originalValue = widget.initialData[key];
 
       if (originalValue is int) {
-        result[key] = int.tryParse(textValue) ?? 0;
+        result[key] =
+            int.tryParse(textValue) ??
+            double.tryParse(normalizedNumeric)?.round() ??
+            0;
       } else if (originalValue is double) {
-        result[key] = double.tryParse(textValue) ?? 0.0;
+        result[key] = double.tryParse(normalizedNumeric) ?? 0.0;
       } else if (originalValue is bool) {
         final lowercase = textValue.toLowerCase().trim();
         result[key] =
@@ -470,6 +474,41 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         .join(' ');
   }
 
+  bool _toBool(String rawValue) {
+    final normalized = rawValue.trim().toLowerCase();
+    return normalized == '1' ||
+        normalized == 'true' ||
+        normalized == 'si' ||
+        normalized == 'yes';
+  }
+
+  DateTime? _parseDate(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty) return null;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed != null) return parsed;
+
+    final parts = raw.split('/');
+    if (parts.length == 3) {
+      final day = int.tryParse(parts[0]);
+      final month = int.tryParse(parts[1]);
+      final year = int.tryParse(parts[2]);
+      if (day != null && month != null && year != null) {
+        return DateTime(year, month, day);
+      }
+    }
+    return null;
+  }
+
+  String _formatDateForDisplay(String rawValue) {
+    final parsed = _parseDate(rawValue);
+    if (parsed == null) return rawValue;
+    final day = parsed.day.toString().padLeft(2, '0');
+    final month = parsed.month.toString().padLeft(2, '0');
+    final year = parsed.year.toString();
+    return '$day/$month/$year';
+  }
+
   Widget _buildFieldCard(Widget child) {
     return Container(
       decoration: BoxDecoration(
@@ -490,6 +529,18 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   Widget _buildFieldWidget(String key, DynamicFormFieldSchema? schema) {
+    if (schema != null && schema.type == DynamicFormFieldType.number) {
+      return _buildNumberField(key, schema);
+    }
+
+    if (schema != null && schema.type == DynamicFormFieldType.date) {
+      return _buildDateField(key, schema);
+    }
+
+    if (schema != null && schema.type == DynamicFormFieldType.boolean) {
+      return _buildBooleanField(key, schema);
+    }
+
     if (schema != null && schema.type == DynamicFormFieldType.dropdown) {
       return _buildSingleDropdownField(key, schema);
     }
@@ -711,6 +762,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final isReadOnly =
         widget.isEdit && (key == 'id') || (schema?.isReadOnly == true);
     final label = _resolveFieldLabel(key, explicitLabel: schema?.label);
+    final isRequired = schema?.isRequired == true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -730,8 +782,171 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             fontSize: 14,
             color: isReadOnly ? const Color(0xFF64748B) : _inputTextColor,
           ),
-          decoration: _fieldDecoration(isReadOnly: isReadOnly),
+          decoration: _fieldDecoration(
+            isReadOnly: isReadOnly,
+            hintText: schema?.hintText,
+          ),
+          validator: (value) {
+            if (!isRequired || isReadOnly) return null;
+            if (value == null || value.trim().isEmpty) {
+              return 'Campo requerido';
+            }
+            return null;
+          },
         ),
+      ],
+    );
+  }
+
+  Widget _buildNumberField(String key, DynamicFormFieldSchema schema) {
+    final controller = _controllers[key]!;
+    final isReadOnly = widget.isEdit && key == 'id' || schema.isReadOnly;
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: _fieldLabelStyle()),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          readOnly: isReadOnly,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: GoogleFonts.outfit(
+            fontSize: 14,
+            color: isReadOnly ? const Color(0xFF64748B) : _inputTextColor,
+          ),
+          decoration: _fieldDecoration(
+            isReadOnly: isReadOnly,
+            hintText: schema.hintText,
+          ),
+          validator: (value) {
+            final raw = value?.trim() ?? '';
+            if (schema.isRequired && raw.isEmpty) {
+              return 'Campo requerido';
+            }
+            if (raw.isNotEmpty &&
+                double.tryParse(raw.replaceAll(',', '.')) == null) {
+              return 'Numero invalido';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBooleanField(String key, DynamicFormFieldSchema schema) {
+    final controller = _controllers[key]!;
+    final isReadOnly = widget.isEdit && key == 'id' || schema.isReadOnly;
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
+    final value = _toBool(controller.text);
+    final semanticYesNo =
+        label.toLowerCase().contains('global') ||
+        label.toLowerCase().contains('habilitar') ||
+        label.toLowerCase().contains('gestion') ||
+        label.toLowerCase().contains('control');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: _fieldLabelStyle()),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _inputBorderColor),
+          ),
+          child: SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              semanticYesNo
+                  ? (value ? 'Si' : 'No')
+                  : (value ? 'Activo' : 'Inactivo'),
+              style: GoogleFonts.outfit(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _inputTextColor,
+              ),
+            ),
+            value: value,
+            onChanged: isReadOnly
+                ? null
+                : (next) {
+                    setState(() {
+                      controller.text = next ? '1' : '0';
+                    });
+                  },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateField(String key, DynamicFormFieldSchema schema) {
+    final controller = _controllers[key]!;
+    final isReadOnly = widget.isEdit && key == 'id' || schema.isReadOnly;
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: _fieldLabelStyle()),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          readOnly: true,
+          style: GoogleFonts.outfit(fontSize: 14, color: _inputTextColor),
+          decoration: _fieldDecoration(
+            isReadOnly: isReadOnly,
+            hintText: schema.hintText ?? 'Selecciona una fecha',
+            prefixIcon: const Icon(Icons.calendar_today_rounded, size: 18),
+          ),
+          onTap: isReadOnly
+              ? null
+              : () async {
+                  final initialDate =
+                      _parseDate(controller.text) ?? DateTime.now();
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: initialDate,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked == null) return;
+                  final normalized = DateTime(
+                    picked.year,
+                    picked.month,
+                    picked.day,
+                  );
+                  setState(() {
+                    controller.text = normalized.toIso8601String();
+                  });
+                },
+          validator: (value) {
+            final raw = value?.trim() ?? '';
+            if (schema.isRequired && raw.isEmpty) {
+              return 'Campo requerido';
+            }
+            if (raw.isNotEmpty && _parseDate(raw) == null) {
+              return 'Fecha invalida';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 4),
+        if (controller.text.trim().isNotEmpty)
+          Text(
+            _formatDateForDisplay(controller.text),
+            style: GoogleFonts.outfit(
+              fontSize: 12,
+              color: const Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
       ],
     );
   }
@@ -944,6 +1159,12 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               controller.clear();
             }
           },
+          validator: (_) {
+            if (schema.isRequired && controller.text.trim().isEmpty) {
+              return 'Campo requerido';
+            }
+            return null;
+          },
           popupProps: PopupProps.menu(
             showSearchBox: true,
             showSelectedItems: true,
@@ -1144,6 +1365,12 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                   .toList();
             });
           },
+          validator: (_) {
+            if (schema.isRequired && _jsonArrayFields[key]!.isEmpty) {
+              return 'Selecciona al menos una opcion';
+            }
+            return null;
+          },
           popupProps: PopupPropsMultiSelection.menu(
             showSearchBox: true,
             showSelectedItems: true,
@@ -1238,6 +1465,12 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                 },
           style: GoogleFonts.outfit(fontSize: 14, color: _inputTextColor),
           decoration: _fieldDecoration(isReadOnly: isReadOnly),
+          validator: (_) {
+            if (schema.isRequired && controller.text.trim().isEmpty) {
+              return 'Campo requerido';
+            }
+            return null;
+          },
         ),
       ],
     );
