@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Definición de cada sección del sidebar EPD.
+/// Definicion de cada seccion del sidebar EPD.
 class EpdSection {
   final String id;
   final String label;
@@ -49,7 +49,7 @@ const List<EpdSection> epdSections = [
   ),
   EpdSection(
     id: 'categories',
-    label: 'Categorías',
+    label: 'Categorias',
     collection: 'categories',
     icon: Icons.category_rounded,
   ),
@@ -64,6 +64,18 @@ const List<EpdSection> epdSections = [
     label: 'Ventas',
     collection: 'sales',
     icon: Icons.point_of_sale_rounded,
+  ),
+  EpdSection(
+    id: 'expense_categories',
+    label: 'Tipos de Gasto',
+    collection: 'expense_categories',
+    icon: Icons.category_outlined,
+  ),
+  EpdSection(
+    id: 'expenses',
+    label: 'Registro de Gastos',
+    collection: 'expenses',
+    icon: Icons.receipt_long_rounded,
   ),
   EpdSection(
     id: 'inventory',
@@ -103,13 +115,13 @@ const List<EpdSection> epdSections = [
   ),
   EpdSection(
     id: 'catalog_templates',
-    label: 'Plantillas Catálogo',
+    label: 'Plantillas Catalogo',
     collection: 'catalog_templates',
     icon: Icons.list_alt_rounded,
   ),
   EpdSection(
     id: 'category_templates',
-    label: 'Plantillas Categoría',
+    label: 'Plantillas Categoria',
     collection: 'category_templates',
     icon: Icons.style_rounded,
   ),

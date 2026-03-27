@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -89,7 +89,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     if (k.endsWith('_id') && k.length > 3) return true;
     if (k.toLowerCase().startsWith('id_') && k.length > 3) return true;
     if (k.endsWith('ID') && k.length > 2) return true;
-    // Empieza con 'Id' + mayúscula (IdSucursal, IdUsuario, IdEmpresa...)
+    // Empieza con 'Id' + mayÃºscula (IdSucursal, IdUsuario, IdEmpresa...)
     if (k.length > 2 &&
         k.startsWith('Id') &&
         k[2] == k[2].toUpperCase() &&
@@ -97,6 +97,16 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       return true;
     return false;
   }
+
+  static const Set<String> _createDisabledSections = {
+    'sales',
+    'waste_reports',
+    'inventory_transactions',
+    'inventory_transfers',
+  };
+
+  bool _isCreateDisabled(String sectionId) =>
+      _createDisabledSections.contains(sectionId);
 
   void _clearFilters() {
     _searchController.clear();
@@ -233,7 +243,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                                       );
                                     }
                                   : null,
-                              // Botón extra para ajuste atómico de stock
+                              // BotÃ³n extra para ajuste atÃ³mico de stock
                               onExtraAction: state.activeSection == 'inventory'
                                   ? (row) => _showInventoryAdjustDialog(row)
                                   : null,
@@ -308,6 +318,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       (s) => s.id == state.activeSection,
       orElse: () => epdSections.first,
     );
+    final canCreate =
+        !_isCreateDisabled(state.activeSection) && !state.isLoading;
     final content = Row(
       children: [
         if (isMobile)
@@ -421,7 +433,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             ),
           ),
         if (!isMobile) const Spacer(),
-        // Búsqueda textual - solo desktop
+        // BÃºsqueda textual - solo desktop
         if (!isMobile && (state.data.isNotEmpty || state.searchField != null))
           Container(
             height: 36,
@@ -574,14 +586,16 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         const SizedBox(width: 12),
         if (isMobile)
           IconButton(
-            onPressed: state.isLoading ? null : () => _showCreateDialog(state),
+            onPressed: canCreate ? () => _showCreateDialog(state) : null,
             icon: const Icon(Icons.add_circle_rounded, size: 28),
             color: const Color(0xFF8B5CF6),
-            tooltip: 'Crear Documento',
+            tooltip: canCreate
+                ? 'Crear Documento'
+                : 'Creación deshabilitada para esta sección',
           )
         else
           ElevatedButton.icon(
-            onPressed: state.isLoading ? null : () => _showCreateDialog(state),
+            onPressed: canCreate ? () => _showCreateDialog(state) : null,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(
               'Crear Documento',
@@ -623,7 +637,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     for (final row in state.data) {
       columnas.addAll(row.keys);
     }
-    // Excluir campos de ID y técnicos del filtro visible al usuario
+    // Excluir campos de ID y tÃ©cnicos del filtro visible al usuario
     final listaColumnas = columnas.where((col) => !_isRawIdField(col)).toList()
       ..sort();
     listaColumnas.removeWhere(
@@ -910,7 +924,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             type: DynamicFormFieldType.radioSelect,
             options: const [
               {'value': 'UNIDAD', 'label': 'Por Unidad'},
-              {'value': 'LB', 'label': 'Por Libra'},
+              {'value': 'PESO', 'label': 'Por Libra/Peso'},
               {'value': 'AMBOS', 'label': 'Ambos'},
             ],
             label: 'Modo de Venta',
@@ -993,6 +1007,62 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           ),
         };
 
+      // -- Tipos de Gasto --
+      case 'expense_categories':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () => state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'color': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.colorPicker,
+            label: 'Color',
+          ),
+          'isActive': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
+          ),
+        };
+
+      // -- Registro de Gastos --
+      case 'expenses':
+        return {
+          'empresaId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () => state.getDropdownOptions('companies'),
+            label: 'Empresa',
+          ),
+          'branchId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () => state.getDropdownOptions('branches'),
+            label: 'Sucursal',
+          ),
+          'categoryId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () =>
+                state.getDropdownOptions('expense_categories'),
+            label: 'Tipo de Gasto',
+          ),
+          'registeredByUserId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () => state.getDropdownOptions('users'),
+            label: 'Registrado por',
+          ),
+          'estado': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: const [
+              {'value': '1', 'label': 'Activo'},
+              {'value': '0', 'label': 'Inactivo'},
+            ],
+            label: 'Estado',
+          ),
+        };
+
       // -- Proveedores --
       case 'suppliers':
         return {
@@ -1007,7 +1077,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
               {'value': '0', 'label': 'Proveedor Local'},
               {'value': '1', 'label': 'Proveedor Global'},
             ],
-            label: '¿Alcance del Proveedor?',
+            label: 'Alcance del Proveedor?',
           ),
           'activo': DynamicFormFieldSchema(
             type: DynamicFormFieldType.radioSelect,
@@ -1071,15 +1141,15 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     // Timestamps gestionados por el backend
     'last_modified', 'last_updated_cloud', 'fechacreacion',
     'fecha_creacion_registro',
-    // Auditoría interna
+    // AuditorÃ­a interna
     'creado_por', 'modificado_por', 'idusuario', 'Idvendedor',
     'seller_id',
-    // Banderas y contadores internos del motor móvil
+    // Banderas y contadores internos del motor mÃ³vil
     'estado', 'Favorito', 'OrdenFavorito',
     'contador_ventas', 'isTemplate', 'source_template_id',
     'sync_status', 'control_inventario', 'clientes_enabled',
     'pesos_rapidos_enabled', 'adminId',
-    // IDs canónicos autogenerados por el backend al crear
+    // IDs canÃ³nicos autogenerados por el backend al crear
     'IdProducto', 'IdCombo', 'IdInventario',
     'IdTransaccion', 'IdVenta', 'IdCliente', 'IdUsuario',
     // Autogenerados (no debe llenar el admin)
@@ -1091,8 +1161,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'items',
   ];
 
-  /// Devuelve los campos base requeridos por cada colección, para que el formulario
-  /// de creación funcione aunque la tabla esté completamente vacía.
+  /// Devuelve los campos base requeridos por cada colecciÃ³n, para que el formulario
+  /// de creaciÃ³n funcione aunque la tabla estÃ© completamente vacÃ­a.
   Map<String, dynamic> _getBaseFieldsForSection(String section) {
     switch (section) {
       // -- Empresas --
@@ -1109,7 +1179,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'activo': 1,
         };
 
-      // -- Sucursales (CódigoSucursal autogenerado por backend) --
+      // -- Sucursales (CÃ³digoSucursal autogenerado por backend) --
       case 'branches':
         return {
           'Nombre': '',
@@ -1134,7 +1204,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'pin': '',
           'rol': 'VENDEDOR',
           'empresaId': '',
-          // IdSucursal y selected_categories están en _hiddenSystemFields;
+          // IdSucursal y selected_categories estÃ¡n en _hiddenSystemFields;
           // el backend rellena IdSucursal desde IdSucursalesAsignadas[0].
           'IdSucursal': '',
           'IdSucursalesAsignadas': '[]',
@@ -1155,6 +1225,30 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'adminId': '',
           'activo': 1,
           'sync_status': 1,
+        };
+
+      // -- Tipos de Gasto --
+      case 'expense_categories':
+        return {
+          'name': '',
+          'color': '#EF4444',
+          'icon': 'receipt_long',
+          'empresaId': '',
+          'isActive': 1,
+        };
+
+      // -- Registro de Gastos --
+      case 'expenses':
+        return {
+          'categoryId': '',
+          'categoryName': '',
+          'description': '',
+          'amount': 0.0,
+          'date': DateTime.now().toIso8601String(),
+          'branchId': '',
+          'registeredByUserId': '',
+          'empresaId': '',
+          'estado': 1,
         };
 
       // -- Categorías --
@@ -1182,7 +1276,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
           'costo': 0.0,
           'IdCategoria': '',
           'empresaId': '',
-          // Campos del motor móvil (ocultos, valores por defecto)
+          // Campos del motor mÃ³vil (ocultos, valores por defecto)
           'Favorito': 0,
           'OrdenFavorito': 0,
           'contador_ventas': 0,
@@ -1235,7 +1329,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       case 'waste_reports':
       case 'catalog_templates':
       case 'category_templates':
-        return {}; // Sin formulario de creación
+        return {}; // Sin formulario de creaciÃ³n
 
       default:
         return {};
@@ -1427,6 +1521,79 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   }) {
     final payload = Map<String, dynamic>.from(result);
 
+    if (state.activeSection == 'expense_categories') {
+      final normalizedName =
+          (payload['name'] ?? payload['nombre'])?.toString().trim() ?? '';
+      payload['name'] = normalizedName;
+      payload.remove('nombre');
+      payload.remove('descripcion');
+
+      final activeRaw = payload['isActive'] ?? payload['activo'];
+      if (activeRaw is bool) {
+        payload['isActive'] = activeRaw ? 1 : 0;
+      } else {
+        payload['isActive'] = int.tryParse(activeRaw?.toString() ?? '') ?? 1;
+      }
+      payload.remove('activo');
+      return payload;
+    }
+
+    if (state.activeSection == 'expenses') {
+      payload['categoryId'] =
+          (payload['categoryId'] ?? payload['IdTipoGasto'])
+              ?.toString()
+              .trim() ??
+          '';
+      payload.remove('IdTipoGasto');
+
+      payload['description'] =
+          (payload['description'] ?? payload['descripcion'])
+              ?.toString()
+              .trim() ??
+          '';
+      payload.remove('descripcion');
+
+      final rawAmount = payload['amount'] ?? payload['monto'];
+      if (rawAmount is num) {
+        payload['amount'] = rawAmount.toDouble();
+      } else {
+        payload['amount'] = double.tryParse(rawAmount?.toString() ?? '') ?? 0.0;
+      }
+      payload.remove('monto');
+
+      final rawDate = payload['date'] ?? payload['fecha'];
+      payload['date'] = (rawDate?.toString().trim().isNotEmpty ?? false)
+          ? rawDate.toString().trim()
+          : DateTime.now().toIso8601String();
+      payload.remove('fecha');
+
+      final activeRaw =
+          payload['estado'] ?? payload['isActive'] ?? payload['activo'];
+      if (activeRaw is bool) {
+        payload['estado'] = activeRaw ? 1 : 0;
+      } else {
+        payload['estado'] = int.tryParse(activeRaw?.toString() ?? '') ?? 1;
+      }
+      payload.remove('isActive');
+      payload.remove('activo');
+
+      final categoryId = payload['categoryId']?.toString().trim() ?? '';
+      if (categoryId.isNotEmpty) {
+        final options = state.getDropdownOptions('expense_categories');
+        Map<String, dynamic>? matched;
+        for (final option in options) {
+          if (option['value']?.toString() == categoryId) {
+            matched = option;
+            break;
+          }
+        }
+        if (matched != null) {
+          payload['categoryName'] = matched['label']?.toString() ?? '';
+        }
+      }
+      return payload;
+    }
+
     if (state.activeSection == 'branches') {
       // Solo para UI de sucursales; no debe persistirse en el documento branch.
       payload.remove('assigned_seller_ids');
@@ -1437,7 +1604,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
     if (state.activeSection != 'combos') return payload;
 
-    // Normalizar alias legacy -> esquema canónico de combos usado por la app móvil.
+    // Normalizar alias legacy -> esquema canÃ³nico de combos usado por la app mÃ³vil.
     final comboName = (payload['nombre'] ?? payload['NombreCombo'])
         ?.toString()
         .trim();
@@ -1476,6 +1643,62 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     EpdDashboardState state,
     Map<String, dynamic> row,
   ) {
+    if (state.activeSection == 'expense_categories') {
+      final initialData = Map<String, dynamic>.from(row);
+      if ((initialData['name'] == null ||
+              initialData['name'].toString().isEmpty) &&
+          initialData['nombre'] != null) {
+        initialData['name'] = initialData['nombre'];
+      }
+
+      final activeValue = initialData['isActive'] ?? initialData['activo'];
+      if (activeValue is bool) {
+        initialData['isActive'] = activeValue ? 1 : 0;
+      } else if (activeValue != null) {
+        initialData['isActive'] = int.tryParse(activeValue.toString()) ?? 1;
+      } else {
+        initialData['isActive'] = 1;
+      }
+      initialData.remove('activo');
+      return initialData;
+    }
+
+    if (state.activeSection == 'expenses') {
+      final initialData = Map<String, dynamic>.from(row);
+      if ((initialData['categoryId'] == null ||
+              initialData['categoryId'].toString().isEmpty) &&
+          initialData['IdTipoGasto'] != null) {
+        initialData['categoryId'] = initialData['IdTipoGasto'];
+      }
+      if ((initialData['description'] == null ||
+              initialData['description'].toString().isEmpty) &&
+          initialData['descripcion'] != null) {
+        initialData['description'] = initialData['descripcion'];
+      }
+      if (initialData['amount'] == null && initialData['monto'] != null) {
+        initialData['amount'] = initialData['monto'];
+      }
+      if (initialData['date'] == null && initialData['fecha'] != null) {
+        initialData['date'] = initialData['fecha'];
+      }
+      if (initialData['estado'] == null) {
+        final activeRaw = initialData['isActive'] ?? initialData['activo'];
+        if (activeRaw is bool) {
+          initialData['estado'] = activeRaw ? 1 : 0;
+        } else {
+          initialData['estado'] =
+              int.tryParse(activeRaw?.toString() ?? '') ?? 1;
+        }
+      }
+      initialData.remove('IdTipoGasto');
+      initialData.remove('descripcion');
+      initialData.remove('monto');
+      initialData.remove('fecha');
+      initialData.remove('isActive');
+      initialData.remove('activo');
+      return initialData;
+    }
+
     if (state.activeSection == 'branches') {
       final initialData = Map<String, dynamic>.from(row);
       initialData['assigned_seller_ids'] = _getAssignedSellerIdsForBranch(
@@ -1504,6 +1727,16 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   }
 
   Future<void> _showCreateDialog(EpdDashboardState state) async {
+    if (_isCreateDisabled(state.activeSection)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La creación está deshabilitada para esta sección.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (state.activeSection == 'branches' &&
         state.selectedEmpresas.length != 1) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1517,10 +1750,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       return;
     }
 
-    // Plantilla base por sección (robusta, no depende de state.data.first)
+    // Plantilla base por secciÃ³n (robusta, no depende de state.data.first)
     final initialData = _getBaseFieldsForSection(state.activeSection);
 
-    // Inyectar automáticamente el contexto activo (empresa seleccionada, filtros de búsqueda)
+    // Inyectar automÃ¡ticamente el contexto activo (empresa seleccionada, filtros de bÃºsqueda)
     final contextHidden = <String>[];
 
     // Si hay una sola empresa seleccionada, se inyecta como empresaId
@@ -1535,7 +1768,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       }
     }
 
-    // Si hay un filtro de búsqueda activo, también se inyecta y oculta
+    // Si hay un filtro de bÃºsqueda activo, tambiÃ©n se inyecta y oculta
     if (state.searchField != null &&
         state.searchValue != null &&
         state.searchValue!.isNotEmpty) {
@@ -1737,10 +1970,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
   }
 
-  /// Diálogo para ajuste atómico de stock de inventario.
+  /// DiÃ¡logo para ajuste atÃ³mico de stock de inventario.
   /// Llama al endpoint POST /inventario-ajuste que en un Batch:
   ///   1) Actualiza el campo `stock` del documento en `inventory`
-  ///   2) Crea un registro de auditoría en `inventory_transactions`
+  ///   2) Crea un registro de auditorÃ­a en `inventory_transactions`
   Future<void> _showInventoryAdjustDialog(Map<String, dynamic> row) async {
     final cantidadCtrl = TextEditingController();
     final motivoCtrl = TextEditingController();
@@ -1808,7 +2041,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                             ),
                           ),
                           Text(
-                            ' • Stock actual: ',
+                            '$nombreProducto - Stock actual: $stockActual',
                             style: GoogleFonts.outfit(
                               fontSize: 12,
                               color: const Color(0xFF64748B),
@@ -1925,7 +2158,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Observación (opcional)
+                // ObservaciÃ³n (opcional)
                 Text(
                   'OBSERVACIÓN (opcional)',
                   style: GoogleFonts.outfit(

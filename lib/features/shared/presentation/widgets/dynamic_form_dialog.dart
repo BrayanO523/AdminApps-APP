@@ -180,7 +180,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     if (hasUnitPrice && hasLbPrice) {
       nextMode = 'AMBOS';
     } else if (hasLbPrice) {
-      nextMode = 'LB';
+      nextMode = 'PESO';
     } else if (hasUnitPrice) {
       nextMode = 'UNIDAD';
     }
@@ -394,6 +394,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'IdCategoria': 'Categoría',
     'NombreProducto': 'Nombre del Producto',
     'IdProducto': 'Producto',
+    'IdTipoGasto': 'Tipo de Gasto',
+    'categoryId': 'Tipo de Gasto',
+    'categoryName': 'Tipo de Gasto',
+    'branchId': 'Sucursal',
+    'registeredByUserId': 'Registrado por',
     'NombreCombo': 'Nombre del Combo',
     'IdCombo': 'Combo',
     'IdCliente': 'Cliente',
@@ -407,7 +412,13 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'ModoVventa': 'Modo de Venta',
     'esGlobal': 'Alcance del Proveedor',
     'activo': 'Estado',
+    'isActive': 'Estado',
     'sync_status': 'Estado de Sincronización',
+    'monto': 'Monto',
+    'amount': 'Monto',
+    'fecha': 'Fecha',
+    'date': 'Fecha',
+    'description': 'Descripción',
   };
 
   String _resolveFieldLabel(String key, {String? explicitLabel}) {
