@@ -9,8 +9,14 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../app/di/network_provider.dart';
 
 import '../../domain/entities/epd_section.dart';
+import '../config/epd_collection_form_registry.dart';
+import '../mappers/epd_collection_payload_mapper.dart';
 import '../viewmodels/epd_dashboard_viewmodel.dart';
+import '../widgets/combo_form_dialog.dart';
 import '../widgets/epd_sidebar.dart';
+import '../widgets/expense_category_form_dialog.dart';
+import '../widgets/expense_form_dialog.dart';
+import '../widgets/supplier_assignment_form_dialog.dart';
 import '../../../shared/presentation/widgets/dynamic_data_table.dart';
 import '../../../shared/presentation/widgets/dynamic_form_dialog.dart';
 import '../../../shared/presentation/widgets/dynamic_form_field_schema.dart';
@@ -53,7 +59,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         if (url != null && url.isNotEmpty) return url;
       }
 
-      throw Exception('La API no devolvió una URL válida de imagen.');
+      throw Exception('La API no devolvio una URL valida de imagen.');
     } on TimeoutException {
       throw Exception(
         'Timeout subiendo imagen por API. Verifica conectividad y estado del servidor.',
@@ -89,13 +95,44 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     if (k.endsWith('_id') && k.length > 3) return true;
     if (k.toLowerCase().startsWith('id_') && k.length > 3) return true;
     if (k.endsWith('ID') && k.length > 2) return true;
-    // Empieza con 'Id' + mayÃºscula (IdSucursal, IdUsuario, IdEmpresa...)
+    // Empieza con 'Id' + mayÃƒÆ’Ã‚Âºscula (IdSucursal, IdUsuario, IdEmpresa...)
     if (k.length > 2 &&
         k.startsWith('Id') &&
         k[2] == k[2].toUpperCase() &&
         k[2] != '_')
       return true;
     return false;
+  }
+
+  static const Set<String> _technicalFilterFields = {
+    'createdat',
+    'updatedat',
+    'created_at',
+    'updated_at',
+    'creadoen',
+    'actualizadoen',
+    'sync_status',
+    'syncstatus',
+    'last_update_cloud',
+    'last_updated_cloud',
+    'lastupdatecloud',
+    'last_modified',
+    'creado_offline',
+    'modificado_offline',
+    'creado_por',
+    'modificado_por',
+    'fecha_creacion',
+    'fecha_creacion_registro',
+    'fecha_actualizacion',
+    'items',
+    'combo_items_editor',
+  };
+
+  bool _isSearchableField(String column) {
+    final normalized = column.trim();
+    if (normalized.isEmpty) return false;
+    if (_isRawIdField(normalized)) return false;
+    return !_technicalFilterFields.contains(normalized.toLowerCase());
   }
 
   static const Set<String> _createDisabledSections = {
@@ -243,7 +280,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                                       );
                                     }
                                   : null,
-                              // BotÃ³n extra para ajuste atÃ³mico de stock
+                              // BotÃƒÆ’Ã‚Â³n extra para ajuste atÃƒÆ’Ã‚Â³mico de stock
                               onExtraAction: state.activeSection == 'inventory'
                                   ? (row) => _showInventoryAdjustDialog(row)
                                   : null,
@@ -433,7 +470,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             ),
           ),
         if (!isMobile) const Spacer(),
-        // BÃºsqueda textual - solo desktop
+        // BÃƒÆ’Ã‚Âºsqueda textual - solo desktop
         if (!isMobile && (state.data.isNotEmpty || state.searchField != null))
           Container(
             height: 36,
@@ -505,25 +542,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                         for (final row in state.data) {
                           cols.addAll(row.keys);
                         }
-                        final list = cols
-                            .where((col) => !_isRawIdField(col))
-                            .toList();
-                        list.removeWhere(
-                          (col) => [
-                            'createdAt',
-                            'updatedAt',
-                            'created_at',
-                            'updated_at',
-                            'creadoEn',
-                            'actualizadoEn',
-                            'sync_status',
-                            'last_update_cloud',
-                            'lastUpdateCloud',
-                            'creado_offline',
-                            'creado_por',
-                            'fecha_creacion',
-                          ].contains(col),
-                        );
+                        final list = cols.where(_isSearchableField).toList();
                         list.sort((a, b) {
                           final aLower = a.toLowerCase();
                           final bLower = b.toLowerCase();
@@ -591,7 +610,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             color: const Color(0xFF8B5CF6),
             tooltip: canCreate
                 ? 'Crear Documento'
-                : 'Creación deshabilitada para esta sección',
+                : 'Creacion deshabilitada para esta seccion',
           )
         else
           ElevatedButton.icon(
@@ -637,25 +656,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     for (final row in state.data) {
       columnas.addAll(row.keys);
     }
-    // Excluir campos de ID y tÃ©cnicos del filtro visible al usuario
-    final listaColumnas = columnas.where((col) => !_isRawIdField(col)).toList()
-      ..sort();
-    listaColumnas.removeWhere(
-      (col) => [
-        'createdAt',
-        'updatedAt',
-        'created_at',
-        'updated_at',
-        'creadoEn',
-        'actualizadoEn',
-        'sync_status',
-        'last_update_cloud',
-        'lastUpdateCloud',
-        'creado_offline',
-        'creado_por',
-        'fecha_creacion',
-      ].contains(col),
-    );
+    // Excluir campos de ID y tÃƒÆ’Ã‚Â©cnicos del filtro visible al usuario
+    final listaColumnas = columnas.where(_isSearchableField).toList()..sort();
 
     final activeField = state.searchField;
     final activeValue = state.searchValue;
@@ -829,512 +831,17 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
   Map<String, DynamicFormFieldSchema> _buildFieldSchemas(
     EpdDashboardState state,
-  ) {
-    switch (state.activeSection) {
-      // -- Sucursales --
-      case 'branches':
-        return {
-          'assigned_seller_ids': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('users'),
-            label: 'Vendedores Asignados',
-          ),
-          'allowed_categories': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('categories'),
-            label: 'Categorías Permitidas',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
+  ) => EpdCollectionFormRegistry.buildFieldSchemas(
+    sectionId: state.activeSection,
+    state: state,
+  );
 
-      // -- Usuarios --
-      case 'users':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa Activa',
-          ),
-          'rol': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': 'VENDEDOR', 'label': 'Vendedor'},
-              {'value': 'ADMIN', 'label': 'Administrador'},
-            ],
-            label: 'Rol',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
+  List<String> _hiddenSystemFieldsForSection(String sectionId) =>
+      EpdCollectionFormRegistry.hiddenSystemFieldsForSection(sectionId);
 
-      // -- Categorías --
-      case 'categories':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'Color': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.colorPicker,
-            label: 'Color de Categoría',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Productos --
-      case 'products':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'IdCategoria': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('categories'),
-            label: 'Categoría',
-          ),
-          'fotoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Foto del Producto',
-            storagePath: 'products/{empresaId}/{id}/{timestamp}.jpg',
-          ),
-          'ModoVventa': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': 'UNIDAD', 'label': 'Por Unidad'},
-              {'value': 'PESO', 'label': 'Por Libra/Peso'},
-              {'value': 'AMBOS', 'label': 'Ambos'},
-            ],
-            label: 'Modo de Venta',
-            isReadOnly: true,
-          ),
-          'is_promo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '0', 'label': 'No es Promoción'},
-              {'value': '1', 'label': 'Sí es Promoción'},
-            ],
-            label: '¿En Promoción?',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Combos --
-      case 'combos':
-        return {
-          'nombre': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Nombre del Combo',
-          ),
-          'precioCombo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Precio del Combo',
-          ),
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'productos_combo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('products'),
-            label: 'Productos del Combo',
-          ),
-          'sucursales_asignadas': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('branches'),
-            label: 'Sucursales Disponibles',
-          ),
-          'fotoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Foto del Combo',
-            storagePath: 'combos/{empresaId}/{id}/{timestamp}.jpg',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Clientes --
-      case 'clients':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Tipos de Gasto --
-      case 'expense_categories':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'color': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.colorPicker,
-            label: 'Color',
-          ),
-          'isActive': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Registro de Gastos --
-      case 'expenses':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'branchId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('branches'),
-            label: 'Sucursal',
-          ),
-          'categoryId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () =>
-                state.getDropdownOptions('expense_categories'),
-            label: 'Tipo de Gasto',
-          ),
-          'registeredByUserId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('users'),
-            label: 'Registrado por',
-          ),
-          'estado': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Proveedores --
-      case 'suppliers':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'esGlobal': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '0', 'label': 'Proveedor Local'},
-              {'value': '1', 'label': 'Proveedor Global'},
-            ],
-            label: 'Alcance del Proveedor?',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Asignaciones de Proveedores --
-      case 'supplier_assignments':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'IdSucursal': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('branches'),
-            label: 'Sucursal',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Empresas ---------------------------------------------------------
-      case 'companies':
-        return {
-          'logoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Logo de la Empresa',
-            storagePath: 'companies/{id}/{timestamp}.jpg',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-      default:
-        return {};
-    }
-  } // fin de _buildFieldSchemas
-
-  // -- Lista global de campos de sistema que el admin NUNCA debe ver ni tocar --
-  static const _hiddenSystemFields = [
-    // SQLite offline-only
-    'creado_offline', 'modificado_offline', 'SYNC_STATUS',
-    // Timestamps gestionados por el backend
-    'last_modified', 'last_updated_cloud', 'fechacreacion',
-    'fecha_creacion_registro',
-    // AuditorÃ­a interna
-    'creado_por', 'modificado_por', 'idusuario', 'Idvendedor',
-    'seller_id',
-    // Banderas y contadores internos del motor mÃ³vil
-    'estado', 'Favorito', 'OrdenFavorito',
-    'contador_ventas', 'isTemplate', 'source_template_id',
-    'sync_status', 'control_inventario', 'clientes_enabled',
-    'pesos_rapidos_enabled', 'adminId',
-    // IDs canÃ³nicos autogenerados por el backend al crear
-    'IdProducto', 'IdCombo', 'IdInventario',
-    'IdTransaccion', 'IdVenta', 'IdCliente', 'IdUsuario',
-    // Autogenerados (no debe llenar el admin)
-    'CodigoSucursal',
-    // Campos de usuario que no aplican en el formulario
-    'selected_categories',
-    'IdSucursalesAsignadas',
-    'IdSucursal',
-    'items',
-  ];
-
-  /// Devuelve los campos base requeridos por cada colecciÃ³n, para que el formulario
-  /// de creaciÃ³n funcione aunque la tabla estÃ© completamente vacÃ­a.
-  Map<String, dynamic> _getBaseFieldsForSection(String section) {
-    switch (section) {
-      // -- Empresas --
-      case 'companies':
-        return {
-          'nombreComercial': '',
-          'razonSocial': '',
-          'rtn': '',
-          'telefono': '',
-          'correo': '',
-          'logoUrl': '',
-          'direccion': '',
-          'adminId': '',
-          'activo': 1,
-        };
-
-      // -- Sucursales (CÃ³digoSucursal autogenerado por backend) --
-      case 'branches':
-        return {
-          'Nombre': '',
-          'direccion_referencia': '',
-          'telefono_contacto': '',
-          'empresaId': '',
-          'adminId': '',
-          'assigned_seller_ids': <String>[],
-          'allowed_categories': <String>[],
-          'control_inventario': 1,
-          'clientes_enabled': 1,
-          'pesos_rapidos_enabled': 0,
-          'sync_status': 1,
-          'activo': 1,
-        };
-
-      // -- Usuarios --
-      case 'users':
-        return {
-          'NombreCompleto': '',
-          'CodigoUsuario': '',
-          'pin': '',
-          'rol': 'VENDEDOR',
-          'empresaId': '',
-          // IdSucursal y selected_categories estÃ¡n en _hiddenSystemFields;
-          // el backend rellena IdSucursal desde IdSucursalesAsignadas[0].
-          'IdSucursal': '',
-          'IdSucursalesAsignadas': '[]',
-          'selected_categories': '[]',
-          'activo': 1,
-        };
-
-      // -- Clientes --
-      case 'clients':
-        return {
-          'NombreCompleto': '',
-          'RTN': '',
-          'Movil': '',
-          'telefono': '',
-          'correo': '',
-          'direccion': '',
-          'empresaId': '',
-          'adminId': '',
-          'activo': 1,
-          'sync_status': 1,
-        };
-
-      // -- Tipos de Gasto --
-      case 'expense_categories':
-        return {
-          'name': '',
-          'color': '#EF4444',
-          'icon': 'receipt_long',
-          'empresaId': '',
-          'isActive': 1,
-        };
-
-      // -- Registro de Gastos --
-      case 'expenses':
-        return {
-          'categoryId': '',
-          'categoryName': '',
-          'description': '',
-          'amount': 0.0,
-          'date': DateTime.now().toIso8601String(),
-          'branchId': '',
-          'registeredByUserId': '',
-          'empresaId': '',
-          'estado': 1,
-        };
-
-      // -- Categorías --
-      case 'categories':
-        return {
-          'NombreCategoria': '',
-          'descripcion': '',
-          'Color': '0xFF3498DB',
-          'empresaId': '',
-          'activo': 1,
-        };
-
-      // -- Productos --
-      case 'products':
-        return {
-          'NombreProducto': '',
-          'descripcion': '',
-          'fotoUrl': '',
-          'preciounidad': 0.0,
-          'precioLibra': 0.0,
-          'ModoVventa': 'UNIDAD',
-          'is_promo': 0,
-          'promo_price': 0.0,
-          'promo_price_lb': 0.0,
-          'costo': 0.0,
-          'IdCategoria': '',
-          'empresaId': '',
-          // Campos del motor mÃ³vil (ocultos, valores por defecto)
-          'Favorito': 0,
-          'OrdenFavorito': 0,
-          'contador_ventas': 0,
-          'Activo': 1,
-          'sync_status': 1,
-        };
-
-      // -- Combos --
-      case 'combos':
-        return {
-          'nombre': '',
-          'descripcion': '',
-          'precioCombo': 0.0,
-          'fotoUrl': '',
-          'productos_combo': <String>[],
-          'sucursales_asignadas': '[]',
-          'empresaId': '',
-          'activo': 1,
-          'sync_status': 1,
-        };
-
-      // -- Proveedores --
-      case 'suppliers':
-        return {
-          'nombre': '',
-          'telefono': '',
-          'email': '',
-          'direccion': '',
-          'notas': '',
-          'empresaId': '',
-          'esGlobal': 0,
-          'activo': 1,
-        };
-
-      // -- Asignaciones de Proveedores --
-      case 'supplier_assignments':
-        return {
-          'IdProveedor': '',
-          'IdSucursal': '',
-          'motivo': '',
-          'empresaId': '',
-          'activo': 1,
-        };
-
-      // Inventario, ventas, mermas, traslados -> solo lectura
-      case 'inventory':
-      case 'inventory_transactions':
-      case 'inventory_transfers':
-      case 'sales':
-      case 'waste_reports':
-      case 'catalog_templates':
-      case 'category_templates':
-        return {}; // Sin formulario de creaciÃ³n
-
-      default:
-        return {};
-    }
-  }
+  /// Devuelve los campos base requeridos por cada coleccion para formularios de creacion.
+  Map<String, dynamic> _getBaseFieldsForSection(String section) =>
+      EpdCollectionFormRegistry.baseFields(section);
 
   List<String> _parseStringList(dynamic rawValue) {
     final result = <String>[];
@@ -1519,80 +1026,11 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     Map<String, dynamic> result, {
     Map<String, dynamic>? existingRow,
   }) {
-    final payload = Map<String, dynamic>.from(result);
-
-    if (state.activeSection == 'expense_categories') {
-      final normalizedName =
-          (payload['name'] ?? payload['nombre'])?.toString().trim() ?? '';
-      payload['name'] = normalizedName;
-      payload.remove('nombre');
-      payload.remove('descripcion');
-
-      final activeRaw = payload['isActive'] ?? payload['activo'];
-      if (activeRaw is bool) {
-        payload['isActive'] = activeRaw ? 1 : 0;
-      } else {
-        payload['isActive'] = int.tryParse(activeRaw?.toString() ?? '') ?? 1;
-      }
-      payload.remove('activo');
-      return payload;
-    }
-
-    if (state.activeSection == 'expenses') {
-      payload['categoryId'] =
-          (payload['categoryId'] ?? payload['IdTipoGasto'])
-              ?.toString()
-              .trim() ??
-          '';
-      payload.remove('IdTipoGasto');
-
-      payload['description'] =
-          (payload['description'] ?? payload['descripcion'])
-              ?.toString()
-              .trim() ??
-          '';
-      payload.remove('descripcion');
-
-      final rawAmount = payload['amount'] ?? payload['monto'];
-      if (rawAmount is num) {
-        payload['amount'] = rawAmount.toDouble();
-      } else {
-        payload['amount'] = double.tryParse(rawAmount?.toString() ?? '') ?? 0.0;
-      }
-      payload.remove('monto');
-
-      final rawDate = payload['date'] ?? payload['fecha'];
-      payload['date'] = (rawDate?.toString().trim().isNotEmpty ?? false)
-          ? rawDate.toString().trim()
-          : DateTime.now().toIso8601String();
-      payload.remove('fecha');
-
-      final activeRaw =
-          payload['estado'] ?? payload['isActive'] ?? payload['activo'];
-      if (activeRaw is bool) {
-        payload['estado'] = activeRaw ? 1 : 0;
-      } else {
-        payload['estado'] = int.tryParse(activeRaw?.toString() ?? '') ?? 1;
-      }
-      payload.remove('isActive');
-      payload.remove('activo');
-
-      final categoryId = payload['categoryId']?.toString().trim() ?? '';
-      if (categoryId.isNotEmpty) {
-        final options = state.getDropdownOptions('expense_categories');
-        Map<String, dynamic>? matched;
-        for (final option in options) {
-          if (option['value']?.toString() == categoryId) {
-            matched = option;
-            break;
-          }
-        }
-        if (matched != null) {
-          payload['categoryName'] = matched['label']?.toString() ?? '';
-        }
-      }
-      return payload;
-    }
+    final payload = EpdCollectionPayloadMapper.fromFormToApi(
+      sectionId: state.activeSection,
+      state: state,
+      formData: result,
+    );
 
     if (state.activeSection == 'branches') {
       // Solo para UI de sucursales; no debe persistirse en el documento branch.
@@ -1604,7 +1042,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
     if (state.activeSection != 'combos') return payload;
 
-    // Normalizar alias legacy -> esquema canÃ³nico de combos usado por la app mÃ³vil.
+    // Normalizar alias legacy -> esquema canÃƒÆ’Ã‚Â³nico de combos usado por la app mÃƒÆ’Ã‚Â³vil.
     final comboName = (payload['nombre'] ?? payload['NombreCombo'])
         ?.toString()
         .trim();
@@ -1623,18 +1061,75 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
     payload.remove('precio');
 
-    final selectedProductIds = _parseStringList(
-      payload.remove('productos_combo'),
-    );
+    final editedItems = _parseMapList(payload.remove('combo_items_editor'));
+    final selectedProductIds = editedItems.isNotEmpty
+        ? _extractComboProductIds(editedItems)
+        : _parseStringList(payload.remove('productos_combo'));
     final existingItems = _parseMapList(existingRow?['items']);
     final comboId =
         existingRow?['id']?.toString() ?? payload['id']?.toString() ?? '';
 
-    payload['items'] = _buildComboItemsPayload(
-      productIds: selectedProductIds,
-      comboId: comboId,
-      existingItems: existingItems,
-    );
+    if (editedItems.isNotEmpty) {
+      final existingByProduct = <String, Map<String, dynamic>>{};
+      for (final item in existingItems) {
+        final productId = (item['productoId'] ?? item['productId'] ?? '')
+            .toString()
+            .trim();
+        if (productId.isNotEmpty && !existingByProduct.containsKey(productId)) {
+          existingByProduct[productId] = item;
+        }
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      payload['items'] = List<Map<String, dynamic>>.generate(
+        editedItems.length,
+        (index) {
+          final edited = editedItems[index];
+          final productId = (edited['productoId'] ?? edited['productId'] ?? '')
+              .toString()
+              .trim();
+          final existing = existingByProduct[productId];
+
+          final idComboItem =
+              (edited['idComboItem'] ?? existing?['idComboItem'] ?? '')
+                  .toString()
+                  .trim();
+          final itemComboId = (edited['comboId'] ?? existing?['comboId'] ?? '')
+              .toString()
+              .trim();
+          final itemVariantId =
+              (edited['variantId'] ?? existing?['variantId'] ?? '').toString();
+          final itemTipoUnidad =
+              (edited['tipounidad'] ??
+                      edited['tipoUnidad'] ??
+                      existing?['tipounidad'] ??
+                      '')
+                  .toString()
+                  .trim();
+          final cantidadRaw = edited['cantidad'] ?? edited['quantity'];
+          final cantidad = cantidadRaw is num
+              ? cantidadRaw
+              : num.tryParse(cantidadRaw?.toString() ?? '') ?? 1;
+
+          return {
+            'idComboItem': idComboItem.isNotEmpty
+                ? idComboItem
+                : 'combo_item_${timestamp}_$index',
+            'comboId': comboId.isNotEmpty ? comboId : itemComboId,
+            'productoId': productId,
+            'variantId': itemVariantId,
+            'cantidad': cantidad,
+            'tipounidad': itemTipoUnidad.isNotEmpty ? itemTipoUnidad : 'UNIDAD',
+          };
+        },
+      );
+    } else {
+      payload['items'] = _buildComboItemsPayload(
+        productIds: selectedProductIds,
+        comboId: comboId,
+        existingItems: existingItems,
+      );
+    }
 
     return payload;
   }
@@ -1643,64 +1138,13 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     EpdDashboardState state,
     Map<String, dynamic> row,
   ) {
-    if (state.activeSection == 'expense_categories') {
-      final initialData = Map<String, dynamic>.from(row);
-      if ((initialData['name'] == null ||
-              initialData['name'].toString().isEmpty) &&
-          initialData['nombre'] != null) {
-        initialData['name'] = initialData['nombre'];
-      }
-
-      final activeValue = initialData['isActive'] ?? initialData['activo'];
-      if (activeValue is bool) {
-        initialData['isActive'] = activeValue ? 1 : 0;
-      } else if (activeValue != null) {
-        initialData['isActive'] = int.tryParse(activeValue.toString()) ?? 1;
-      } else {
-        initialData['isActive'] = 1;
-      }
-      initialData.remove('activo');
-      return initialData;
-    }
-
-    if (state.activeSection == 'expenses') {
-      final initialData = Map<String, dynamic>.from(row);
-      if ((initialData['categoryId'] == null ||
-              initialData['categoryId'].toString().isEmpty) &&
-          initialData['IdTipoGasto'] != null) {
-        initialData['categoryId'] = initialData['IdTipoGasto'];
-      }
-      if ((initialData['description'] == null ||
-              initialData['description'].toString().isEmpty) &&
-          initialData['descripcion'] != null) {
-        initialData['description'] = initialData['descripcion'];
-      }
-      if (initialData['amount'] == null && initialData['monto'] != null) {
-        initialData['amount'] = initialData['monto'];
-      }
-      if (initialData['date'] == null && initialData['fecha'] != null) {
-        initialData['date'] = initialData['fecha'];
-      }
-      if (initialData['estado'] == null) {
-        final activeRaw = initialData['isActive'] ?? initialData['activo'];
-        if (activeRaw is bool) {
-          initialData['estado'] = activeRaw ? 1 : 0;
-        } else {
-          initialData['estado'] =
-              int.tryParse(activeRaw?.toString() ?? '') ?? 1;
-        }
-      }
-      initialData.remove('IdTipoGasto');
-      initialData.remove('descripcion');
-      initialData.remove('monto');
-      initialData.remove('fecha');
-      initialData.remove('isActive');
-      initialData.remove('activo');
-      return initialData;
-    }
+    final mappedInitial = EpdCollectionPayloadMapper.fromApiToForm(
+      sectionId: state.activeSection,
+      row: row,
+    );
 
     if (state.activeSection == 'branches') {
-      final initialData = Map<String, dynamic>.from(row);
+      final initialData = Map<String, dynamic>.from(mappedInitial);
       initialData['assigned_seller_ids'] = _getAssignedSellerIdsForBranch(
         state,
         row,
@@ -1709,10 +1153,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     if (state.activeSection != 'combos') {
-      return Map<String, dynamic>.from(row);
+      return Map<String, dynamic>.from(mappedInitial);
     }
 
-    final initialData = Map<String, dynamic>.from(row);
+    final initialData = Map<String, dynamic>.from(mappedInitial);
     if ((initialData['nombre'] == null || initialData['nombre'] == '') &&
         initialData['NombreCombo'] != null) {
       initialData['nombre'] = initialData['NombreCombo'];
@@ -1723,14 +1167,93 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     initialData.remove('NombreCombo');
     initialData.remove('precio');
     initialData['productos_combo'] = _extractComboProductIds(row['items']);
+    initialData['combo_items_editor'] = _parseMapList(row['items']);
     return initialData;
+  }
+
+  Future<Map<String, dynamic>?> _showSectionFormDialog({
+    required EpdDashboardState state,
+    required Map<String, dynamic> initialData,
+    required bool isEdit,
+    required String title,
+    required List<String> hiddenFields,
+  }) {
+    if (state.activeSection == 'expense_categories') {
+      return showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        builder: (_) => ExpenseCategoryFormDialog(
+          initialData: initialData,
+          isEdit: isEdit,
+          title: title,
+        ),
+      );
+    }
+
+    if (state.activeSection == 'expenses') {
+      return showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        builder: (_) => ExpenseFormDialog(
+          initialData: initialData,
+          isEdit: isEdit,
+          title: title,
+          branchOptions: state.getDropdownOptions('branches'),
+          categoryOptions: state.getDropdownOptions('expense_categories'),
+          userOptions: state.getDropdownOptions('users'),
+        ),
+      );
+    }
+
+    if (state.activeSection == 'combos') {
+      return showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        builder: (_) => ComboFormDialog(
+          initialData: initialData,
+          isEdit: isEdit,
+          title: title,
+          productOptions: state.getDropdownOptions('products'),
+          branchOptions: state.getDropdownOptions('branches'),
+          onUploadImage: _uploadImageToStorage,
+        ),
+      );
+    }
+
+    if (state.activeSection == 'supplier_assignments') {
+      return showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        builder: (_) => SupplierAssignmentFormDialog(
+          initialData: initialData,
+          isEdit: isEdit,
+          title: title,
+          supplierOptions: state.getDropdownOptions('suppliers'),
+          branchOptions: state.getDropdownOptions('branches'),
+          productOptions: state.getDropdownOptions('products'),
+        ),
+      );
+    }
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      builder: (_) => DynamicFormDialog(
+        initialData: initialData,
+        isEdit: isEdit,
+        title: title,
+        fieldSchemas: _buildFieldSchemas(state),
+        hiddenFields: hiddenFields,
+        onUploadImage: _uploadImageToStorage,
+      ),
+    );
   }
 
   Future<void> _showCreateDialog(EpdDashboardState state) async {
     if (_isCreateDisabled(state.activeSection)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('La creación está deshabilitada para esta sección.'),
+          content: Text('La creacion esta deshabilitada para esta seccion.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -1750,17 +1273,20 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       return;
     }
 
-    // Plantilla base por secciÃ³n (robusta, no depende de state.data.first)
+    // Plantilla base por secciÃƒÆ’Ã‚Â³n (robusta, no depende de state.data.first)
     final initialData = _getBaseFieldsForSection(state.activeSection);
 
-    // Inyectar automÃ¡ticamente el contexto activo (empresa seleccionada, filtros de bÃºsqueda)
+    // Inyectar automÃƒÆ’Ã‚Â¡ticamente el contexto activo (empresa seleccionada, filtros de bÃƒÆ’Ã‚Âºsqueda)
     final contextHidden = <String>[];
 
     // Si hay una sola empresa seleccionada, se inyecta como empresaId
     if (state.selectedEmpresas.length == 1) {
+      final selected = state.selectedEmpresas.first;
       final empresaId =
-          state.selectedEmpresas.first['value']?.toString() ??
-          state.selectedEmpresas.first['id']?.toString() ??
+          selected['value']?.toString() ??
+          selected['id']?.toString() ??
+          selected['IdEmpresa']?.toString() ??
+          selected['empresaId']?.toString() ??
           '';
       if (empresaId.isNotEmpty) {
         initialData['empresaId'] = empresaId;
@@ -1768,7 +1294,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       }
     }
 
-    // Si hay un filtro de bÃºsqueda activo, tambiÃ©n se inyecta y oculta
+    // Si hay un filtro de bÃƒÆ’Ã‚Âºsqueda activo, tambiÃƒÆ’Ã‚Â©n se inyecta y oculta
     if (state.searchField != null &&
         state.searchValue != null &&
         state.searchValue!.isNotEmpty) {
@@ -1778,22 +1304,17 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
     // Lista combinada de ocultos: sistema + contexto ya inyectado.
     final hiddenFields = [
-      ..._hiddenSystemFields,
+      ..._hiddenSystemFieldsForSection(state.activeSection),
       if (state.activeSection == 'branches') 'empresaId',
       ...contextHidden,
     ];
 
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      builder: (_) => DynamicFormDialog(
-        initialData: initialData,
-        isEdit: false,
-        title: 'Crear en ${state.activeSectionLabel}',
-        fieldSchemas: _buildFieldSchemas(state),
-        hiddenFields: hiddenFields,
-        onUploadImage: _uploadImageToStorage,
-      ),
+    final result = await _showSectionFormDialog(
+      state: state,
+      initialData: initialData,
+      isEdit: false,
+      title: 'Crear en ${state.activeSectionLabel}',
+      hiddenFields: hiddenFields,
     );
 
     if (result != null && mounted) {
@@ -1819,7 +1340,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             error = syncError;
           } else {
             error =
-                'La sucursal se creó, pero no se obtuvo el ID para asignar vendedores.';
+                'La sucursal se creo, pero no se obtuvo el ID para asignar vendedores.';
           }
         }
       } else {
@@ -1834,7 +1355,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Documento creado con éxito'),
+              content: Text('Documento creado con exito'),
               backgroundColor: Colors.green,
             ),
           );
@@ -1847,20 +1368,15 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     final state = ref.read(epdDashboardProvider);
     final initialData = _buildDialogInitialData(state, row);
     final hiddenFields = [
-      ..._hiddenSystemFields,
+      ..._hiddenSystemFieldsForSection(state.activeSection),
       if (state.activeSection == 'branches') 'empresaId',
     ];
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      builder: (_) => DynamicFormDialog(
-        initialData: initialData,
-        isEdit: true,
-        title: 'Editar Documento',
-        fieldSchemas: _buildFieldSchemas(state),
-        hiddenFields: hiddenFields,
-        onUploadImage: _uploadImageToStorage,
-      ),
+    final result = await _showSectionFormDialog(
+      state: state,
+      initialData: initialData,
+      isEdit: true,
+      title: 'Editar Documento',
+      hiddenFields: hiddenFields,
     );
 
     if (result != null && mounted) {
@@ -1918,11 +1434,11 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         title: Text(
-          '¿Eliminar documento?',
+          'Eliminar documento?',
           style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'Esta acción es irreversible. ¿Seguro que deseas eliminar el registro permanentemente?',
+          'Esta accion es irreversible. Seguro que deseas eliminar el registro permanentemente?',
           style: GoogleFonts.outfit(),
         ),
         actions: [
@@ -1970,10 +1486,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
   }
 
-  /// DiÃ¡logo para ajuste atÃ³mico de stock de inventario.
+  /// DiÃƒÆ’Ã‚Â¡logo para ajuste atÃƒÆ’Ã‚Â³mico de stock de inventario.
   /// Llama al endpoint POST /inventario-ajuste que en un Batch:
   ///   1) Actualiza el campo `stock` del documento en `inventory`
-  ///   2) Crea un registro de auditorÃ­a en `inventory_transactions`
+  ///   2) Crea un registro de auditorÃƒÆ’Ã‚Â­a en `inventory_transactions`
   Future<void> _showInventoryAdjustDialog(Map<String, dynamic> row) async {
     final cantidadCtrl = TextEditingController();
     final motivoCtrl = TextEditingController();
@@ -2101,7 +1617,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                       return 'Ingresa la cantidad';
                     }
                     if (double.tryParse(v.trim()) == null) {
-                      return 'Debe ser un número válido';
+                      return 'Debe ser un numero valido';
                     }
                     if (double.parse(v.trim()) == 0) {
                       return 'La cantidad no puede ser cero';
@@ -2158,9 +1674,9 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // ObservaciÃ³n (opcional)
+                // ObservaciÃƒÆ’Ã‚Â³n (opcional)
                 Text(
-                  'OBSERVACIÓN (opcional)',
+                  'OBSERVACION (opcional)',
                   style: GoogleFonts.outfit(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -2271,7 +1787,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Ajuste de inventario aplicado con éxito'),
+              content: Text('Ajuste de inventario aplicado con exito'),
               backgroundColor: Color(0xFF059669),
             ),
           );
