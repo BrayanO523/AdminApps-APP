@@ -109,14 +109,11 @@ class EpdCollectionPayloadMapper {
           initialData['nombre'] != null) {
         initialData['name'] = initialData['nombre'];
       }
-      if (initialData['color'] == null ||
-          initialData['color'].toString().trim().isEmpty) {
-        initialData['color'] = '#EF4444';
-      }
-      if (initialData['icon'] == null ||
-          initialData['icon'].toString().trim().isEmpty) {
-        initialData['icon'] = 'receipt_long';
-      }
+      initialData['color'] = _normalizeColorValue(
+        initialData['color'],
+        fallback: '0xFF2196F3',
+      );
+      initialData.remove('icon');
 
       final activeValue = initialData['isActive'] ?? initialData['activo'];
       initialData['isActive'] = _toFlagInt(activeValue, fallback: 1);
@@ -374,11 +371,10 @@ class EpdCollectionPayloadMapper {
     payload['name'] =
         (payload['name'] ?? payload['nombre'])?.toString().trim() ?? '';
 
-    final colorValue = payload['color']?.toString().trim() ?? '';
-    payload['color'] = colorValue.isNotEmpty ? colorValue : '#EF4444';
-
-    final iconValue = payload['icon']?.toString().trim() ?? '';
-    payload['icon'] = iconValue.isNotEmpty ? iconValue : 'receipt_long';
+    payload['color'] = _normalizeColorValue(
+      payload['color'],
+      fallback: '0xFF2196F3',
+    );
 
     final activeRaw = payload['isActive'] ?? payload['activo'];
     payload['isActive'] = _toFlagInt(activeRaw, fallback: 1);
@@ -386,6 +382,7 @@ class EpdCollectionPayloadMapper {
     payload.remove('nombre');
     payload.remove('descripcion');
     payload.remove('activo');
+    payload.remove('icon');
     return payload;
   }
 
@@ -527,6 +524,40 @@ class EpdCollectionPayloadMapper {
     final raw = rawValue?.toString().trim() ?? '';
     if (raw.isEmpty) return 0.0;
     return double.tryParse(raw.replaceAll(',', '.')) ?? 0.0;
+  }
+
+  static String _normalizeColorValue(
+    dynamic rawValue, {
+    String fallback = '0xFF2196F3',
+  }) {
+    if (rawValue == null) return fallback;
+
+    if (rawValue is num) {
+      final hex = rawValue.toInt().toRadixString(16).toUpperCase();
+      final padded = hex.padLeft(8, '0');
+      return '0x$padded';
+    }
+
+    final raw = rawValue.toString().trim();
+    if (raw.isEmpty) return fallback;
+
+    final cleaned = raw
+        .replaceAll('#', '')
+        .replaceAll('0x', '')
+        .replaceAll('0X', '')
+        .trim();
+
+    final hex6 = RegExp(r'^[0-9A-Fa-f]{6}$');
+    if (hex6.hasMatch(cleaned)) {
+      return '0xFF${cleaned.toUpperCase()}';
+    }
+
+    final hex8 = RegExp(r'^[0-9A-Fa-f]{8}$');
+    if (hex8.hasMatch(cleaned)) {
+      return '0x${cleaned.toUpperCase()}';
+    }
+
+    return fallback;
   }
 
   static List<Map<String, dynamic>> _normalizeSupplierProducts(

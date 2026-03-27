@@ -56,6 +56,10 @@ class EpdCollectionFormRegistry {
       hidden.remove('date');
     }
 
+    if (sectionId == 'expense_categories') {
+      hidden.add('icon');
+    }
+
     if (sectionId == 'companies') {
       hidden.remove('activo');
     }
@@ -132,7 +136,7 @@ class EpdCollectionFormRegistry {
           'activo',
         ];
       case 'expense_categories':
-        return const ['name', 'color', 'icon', 'isActive'];
+        return const ['name', 'color', 'isActive'];
       case 'expenses':
         return const [
           'amount',
@@ -393,18 +397,6 @@ class EpdCollectionFormRegistry {
             type: DynamicFormFieldType.colorPicker,
             label: 'Color',
           ),
-          'icon': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: [
-              {'value': 'receipt_long', 'label': 'Recibo'},
-              {'value': 'payments', 'label': 'Pago'},
-              {'value': 'shopping_bag', 'label': 'Compra'},
-              {'value': 'local_shipping', 'label': 'Logistica'},
-              {'value': 'build', 'label': 'Mantenimiento'},
-              {'value': 'inventory_2', 'label': 'Inventario'},
-            ],
-            label: 'Icono',
-          ),
           'isActive': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
             label: 'Estado',
@@ -602,8 +594,7 @@ class EpdCollectionFormRegistry {
       case 'expense_categories':
         return {
           'name': '',
-          'color': '#EF4444',
-          'icon': 'receipt_long',
+          'color': '0xFF2196F3',
           'empresaId': '',
           'isActive': 1,
         };
