@@ -143,6 +143,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'expenses',
     'suppliers',
     'supplier_assignments',
+    'catalog_templates',
+    'category_templates',
   };
 
   bool _isCreateDisabled(String sectionId) =>
@@ -1249,7 +1251,9 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   }
 
   Future<void> _showCreateDialog(EpdDashboardState state) async {
-    if (_isCreateDisabled(state.activeSection)) {
+    var currentState = state;
+
+    if (_isCreateDisabled(currentState.activeSection)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('La creacion esta deshabilitada para esta seccion.'),
@@ -1259,8 +1263,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       return;
     }
 
-    if (state.activeSection == 'branches' &&
-        state.selectedEmpresas.length != 1) {
+    await ref.read(epdDashboardProvider.notifier).refreshDependencies();
+    if (!mounted) return;
+    currentState = ref.read(epdDashboardProvider);
+
+    if (currentState.activeSection == 'branches' &&
+        currentState.selectedEmpresas.length != 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -1273,14 +1281,17 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     // Plantilla base por secciÃƒÆ’Ã‚Â³n (robusta, no depende de state.data.first)
-    final initialData = _getBaseFieldsForSection(state.activeSection);
+    final initialData = _getBaseFieldsForSection(currentState.activeSection);
 
     // Inyectar automÃƒÆ’Ã‚Â¡ticamente el contexto activo (empresa seleccionada, filtros de bÃƒÆ’Ã‚Âºsqueda)
     final contextHidden = <String>[];
+    final isGlobalTemplateSection =
+        currentState.activeSection == 'category_templates' ||
+        currentState.activeSection == 'catalog_templates';
 
     // Si hay una sola empresa seleccionada, se inyecta como empresaId
-    if (state.selectedEmpresas.length == 1) {
-      final selected = state.selectedEmpresas.first;
+    if (!isGlobalTemplateSection && currentState.selectedEmpresas.length == 1) {
+      final selected = currentState.selectedEmpresas.first;
       final empresaId =
           selected['value']?.toString() ??
           selected['id']?.toString() ??
@@ -1294,34 +1305,35 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     // Si hay un filtro de bÃƒÆ’Ã‚Âºsqueda activo, tambiÃƒÆ’Ã‚Â©n se inyecta y oculta
-    if (state.searchField != null &&
-        state.searchValue != null &&
-        state.searchValue!.isNotEmpty) {
-      initialData[state.searchField!] = state.searchValue!;
-      contextHidden.add(state.searchField!);
+    if (!isGlobalTemplateSection &&
+        currentState.searchField != null &&
+        currentState.searchValue != null &&
+        currentState.searchValue!.isNotEmpty) {
+      initialData[currentState.searchField!] = currentState.searchValue!;
+      contextHidden.add(currentState.searchField!);
     }
 
     // Lista combinada de ocultos: sistema + contexto ya inyectado.
     final hiddenFields = [
-      ..._hiddenSystemFieldsForSection(state.activeSection),
-      if (state.activeSection == 'branches') 'empresaId',
+      ..._hiddenSystemFieldsForSection(currentState.activeSection),
+      if (currentState.activeSection == 'branches') 'empresaId',
       ...contextHidden,
     ];
 
     final result = await _showSectionFormDialog(
-      state: state,
+      state: currentState,
       initialData: initialData,
       isEdit: false,
-      title: 'Crear en ${state.activeSectionLabel}',
+      title: 'Crear en ${currentState.activeSectionLabel}',
       hiddenFields: hiddenFields,
     );
 
     if (result != null && mounted) {
       final notifier = ref.read(epdDashboardProvider.notifier);
-      final payload = _normalizePayloadForSubmit(state, result);
+      final payload = _normalizePayloadForSubmit(currentState, result);
       String? error;
 
-      if (state.activeSection == 'branches') {
+      if (currentState.activeSection == 'branches') {
         final selectedSellerIds = _parseStringList(
           result['assigned_seller_ids'],
         );
@@ -1364,6 +1376,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   }
 
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
+    final notifier = ref.read(epdDashboardProvider.notifier);
+    await notifier.refreshDependencies();
+    if (!mounted) return;
+
     final state = ref.read(epdDashboardProvider);
     final initialData = _buildDialogInitialData(state, row);
     final hiddenFields = [
@@ -1387,7 +1403,6 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return;
       }
 
-      final notifier = ref.read(epdDashboardProvider.notifier);
       final payload = _normalizePayloadForSubmit(
         state,
         result,

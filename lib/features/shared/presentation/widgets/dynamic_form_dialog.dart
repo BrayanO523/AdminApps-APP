@@ -43,16 +43,24 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   late Map<String, dynamic> _formData;
   late Map<String, TextEditingController> _controllers;
   static const Set<String> _nativeArrayFields = {'allowed_categories'};
-  static const String _saleModeFieldKey = 'ModoVventa';
+  static const Set<String> _saleModeFieldKeys = {
+    'ModoVventa',
+    'saleMode',
+    'modoVenta',
+  };
   static const Set<String> _unitPriceFieldKeys = {
     'preciounidad',
     'precioUnidad',
     'precio_unidad',
+    'priceUnit',
+    'price_unit',
   };
   static const Set<String> _lbPriceFieldKeys = {
     'precioLibra',
     'precio_lb',
     'precio_libra',
+    'priceLb',
+    'price_lb',
   };
   static const Set<String> _promoToggleFieldKeys = {'is_promo'};
   static const Set<String> _promoPriceFieldKeys = {
@@ -74,6 +82,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   /// Imágenes seleccionadas localmente que se subirán al presionar Guardar.
   final Map<String, Uint8List> _pendingImageBytes = {};
   final Set<String> _autoSaleModeListenerKeys = {};
+  String? _activeSaleModeKey;
 
   bool _isUploading = false;
 
@@ -134,7 +143,8 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   void _configureAutoSaleModeCalculation() {
-    if (!_controllers.containsKey(_saleModeFieldKey)) return;
+    _activeSaleModeKey = _findFirstExistingControllerKey(_saleModeFieldKeys);
+    if (_activeSaleModeKey == null) return;
 
     final unitPriceKey = _findFirstExistingControllerKey(_unitPriceFieldKeys);
     final lbPriceKey = _findFirstExistingControllerKey(_lbPriceFieldKeys);
@@ -164,7 +174,9 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   void _updateSaleModeFromPrices({bool notifyUi = true}) {
-    final saleModeController = _controllers[_saleModeFieldKey];
+    final saleModeController =
+        _controllers[_activeSaleModeKey ?? ''] ??
+        _controllers[_findFirstExistingControllerKey(_saleModeFieldKeys)];
     if (saleModeController == null) return;
 
     final unitPriceText =
@@ -176,16 +188,15 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final hasUnitPrice = _hasPositiveNumber(unitPriceText);
     final hasLbPrice = _hasPositiveNumber(lbPriceText);
 
-    String? nextMode;
+    late final String nextMode;
     if (hasUnitPrice && hasLbPrice) {
       nextMode = 'AMBOS';
     } else if (hasLbPrice) {
       nextMode = 'PESO';
-    } else if (hasUnitPrice) {
+    } else {
       nextMode = 'UNIDAD';
     }
-
-    if (nextMode == null || saleModeController.text == nextMode) return;
+    if (saleModeController.text == nextMode) return;
 
     saleModeController.text = nextMode;
     if (notifyUi && mounted) {
@@ -1706,6 +1717,20 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                             )
                           : null,
                     ),
+                    validator: (value) {
+                      final text = (value ?? '').trim();
+                      final hasPendingLocal = _pendingImageBytes[key] != null;
+                      if (schema.isRequired &&
+                          text.isEmpty &&
+                          !hasPendingLocal) {
+                        return 'Campo requerido';
+                      }
+                      if (text.isNotEmpty &&
+                          !_isPreviewableNetworkImageUrl(text)) {
+                        return 'URL de imagen invalida';
+                      }
+                      return null;
+                    },
                     onChanged: (_) => setInner(() {}),
                   ),
                 ),

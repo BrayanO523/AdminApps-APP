@@ -23,12 +23,14 @@ class EpdDashboardState implements ResolvableState {
   final Map<String, String> sucursalNames;
   final Map<String, String> usuarioNames;
   final Map<String, String> categoriaNames;
+  final Map<String, String> templateCategoryNames;
   final Map<String, String> productoNames;
   final Map<String, String> proveedorNames;
   final Map<String, String> tipoGastoNames;
 
   /// Documentos completos cacheados para poder filtrar por empresa
   final List<Map<String, dynamic>> cachedCategories;
+  final List<Map<String, dynamic>> cachedCategoryTemplates;
   final List<Map<String, dynamic>> cachedBranches;
   final List<Map<String, dynamic>> cachedUsers;
   final List<Map<String, dynamic>> cachedProducts;
@@ -51,10 +53,12 @@ class EpdDashboardState implements ResolvableState {
     this.sucursalNames = const {},
     this.usuarioNames = const {},
     this.categoriaNames = const {},
+    this.templateCategoryNames = const {},
     this.productoNames = const {},
     this.proveedorNames = const {},
     this.tipoGastoNames = const {},
     this.cachedCategories = const [],
+    this.cachedCategoryTemplates = const [],
     this.cachedBranches = const [],
     this.cachedUsers = const [],
     this.cachedProducts = const [],
@@ -77,10 +81,12 @@ class EpdDashboardState implements ResolvableState {
     Map<String, String>? sucursalNames,
     Map<String, String>? usuarioNames,
     Map<String, String>? categoriaNames,
+    Map<String, String>? templateCategoryNames,
     Map<String, String>? productoNames,
     Map<String, String>? proveedorNames,
     Map<String, String>? tipoGastoNames,
     List<Map<String, dynamic>>? cachedCategories,
+    List<Map<String, dynamic>>? cachedCategoryTemplates,
     List<Map<String, dynamic>>? cachedBranches,
     List<Map<String, dynamic>>? cachedUsers,
     List<Map<String, dynamic>>? cachedProducts,
@@ -107,10 +113,14 @@ class EpdDashboardState implements ResolvableState {
       sucursalNames: sucursalNames ?? this.sucursalNames,
       usuarioNames: usuarioNames ?? this.usuarioNames,
       categoriaNames: categoriaNames ?? this.categoriaNames,
+      templateCategoryNames:
+          templateCategoryNames ?? this.templateCategoryNames,
       productoNames: productoNames ?? this.productoNames,
       proveedorNames: proveedorNames ?? this.proveedorNames,
       tipoGastoNames: tipoGastoNames ?? this.tipoGastoNames,
       cachedCategories: cachedCategories ?? this.cachedCategories,
+      cachedCategoryTemplates:
+          cachedCategoryTemplates ?? this.cachedCategoryTemplates,
       cachedBranches: cachedBranches ?? this.cachedBranches,
       cachedUsers: cachedUsers ?? this.cachedUsers,
       cachedProducts: cachedProducts ?? this.cachedProducts,
@@ -142,6 +152,8 @@ class EpdDashboardState implements ResolvableState {
     'expenses': ['id'],
     'combos': ['idCombo', 'IdCombo', 'id'],
     'supplier_assignments': ['id'],
+    'category_templates': ['id'],
+    'catalog_templates': ['id'],
   };
 
   String _extractCollectionId(String collection, Map<String, dynamic> doc) {
@@ -171,13 +183,20 @@ class EpdDashboardState implements ResolvableState {
 
       case 'categories':
         // Filtrar por empresa si hay selecciÃƒÆ’Ã‚Â³n activa
-        final docs = selectedIds.isEmpty
+        final docsByEmpresa = selectedIds.isEmpty
             ? cachedCategories
             : cachedCategories.where((d) {
                 final empId = _extractEmpresaIdFromDoc(d);
                 return selectedIds.contains(empId);
               }).toList();
+        final docs = docsByEmpresa.where(_isCategoryActive).toList();
         return _docsToOptions(docs, section: 'categories');
+
+      case 'category_templates':
+        return _docsToOptions(
+          cachedCategoryTemplates,
+          section: 'category_templates',
+        );
 
       case 'branches':
         final docs = selectedIds.isEmpty
@@ -285,6 +304,44 @@ class EpdDashboardState implements ResolvableState {
     return (doc['empresaId'] ?? doc['IdEmpresa'] ?? '').toString().trim();
   }
 
+  static bool _isCategoryActive(Map<String, dynamic> doc) {
+    final raw = doc['activo'] ?? doc['isActive'] ?? doc['estado'] ?? 1;
+    return _toBoolFlag(raw, fallback: true);
+  }
+
+  static bool _toBoolFlag(dynamic rawValue, {bool fallback = true}) {
+    if (rawValue == null) return fallback;
+    if (rawValue is bool) return rawValue;
+    if (rawValue is num) return rawValue > 0;
+
+    final normalized = rawValue.toString().trim().toLowerCase();
+    if (normalized.isEmpty) return fallback;
+    if ([
+      '1',
+      'true',
+      'si',
+      'sí',
+      'yes',
+      'activo',
+      'active',
+    ].contains(normalized)) {
+      return true;
+    }
+    if ([
+      '0',
+      'false',
+      'no',
+      'inactivo',
+      'inactive',
+      'anulado',
+    ].contains(normalized)) {
+      return false;
+    }
+    final parsed = num.tryParse(normalized);
+    if (parsed != null) return parsed > 0;
+    return fallback;
+  }
+
   static String? _extractDocName(Map<String, dynamic> doc) {
     const nameFields = [
       'NombreCategoria',
@@ -337,7 +394,9 @@ class EpdDashboardState implements ResolvableState {
         lower.contains('categor') ||
         lower.contains('category') ||
         lower.contains('categories')) {
-      return categoriaNames[cleanValue] ?? rawValue;
+      return categoriaNames[cleanValue] ??
+          templateCategoryNames[cleanValue] ??
+          rawValue;
     }
     if (lower.contains('producto') ||
         lower.contains('product') ||
@@ -399,17 +458,21 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     _loadDependencies();
   }
 
+  Future<void> refreshDependencies() => _loadDependencies();
+
   /// Carga dependencias globales (empresas, sucursales, categorÃƒÆ’Ã‚Â­as) para los dropdowns.
   Future<void> _loadDependencies() async {
     final Map<String, String> newEmpresas = Map.from(state.empresaNames);
     final List<Map<String, dynamic>> newCachedBranches = [];
     final List<Map<String, dynamic>> newCachedCategories = [];
+    final List<Map<String, dynamic>> newCachedCategoryTemplates = [];
     final List<Map<String, dynamic>> newCachedUsers = [];
     final List<Map<String, dynamic>> newCachedProducts = [];
     final List<Map<String, dynamic>> newCachedSuppliers = [];
     final List<Map<String, dynamic>> newCachedExpenseTypes = [];
     final Map<String, String> newBranches = {};
     final Map<String, String> newCategories = {};
+    final Map<String, String> newTemplateCategories = {};
     final Map<String, String> newUsers = {};
     final Map<String, String> newProducts = {};
     final Map<String, String> newSuppliers = {};
@@ -442,6 +505,17 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
             if (id.isNotEmpty) {
               newCategories[id] = _extractName(doc) ?? id;
               newCachedCategories.add(doc);
+            }
+          }
+        });
+      }),
+      _dataSource.getCollection('category_templates', limit: 300).then((res) {
+        res.fold((_) {}, (resp) {
+          for (final doc in resp.data) {
+            final id = state._extractCollectionId('category_templates', doc);
+            if (id.isNotEmpty) {
+              newTemplateCategories[id] = _extractName(doc) ?? id;
+              newCachedCategoryTemplates.add(doc);
             }
           }
         });
@@ -496,11 +570,13 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       empresaNames: newEmpresas,
       sucursalNames: newBranches,
       categoriaNames: newCategories,
+      templateCategoryNames: newTemplateCategories,
       usuarioNames: newUsers,
       productoNames: newProducts,
       proveedorNames: newSuppliers,
       tipoGastoNames: newExpenseTypes,
       cachedCategories: newCachedCategories,
+      cachedCategoryTemplates: newCachedCategoryTemplates,
       cachedBranches: newCachedBranches,
       cachedUsers: newCachedUsers,
       cachedProducts: newCachedProducts,
@@ -638,6 +714,9 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     final newSucursal = Map<String, String>.from(state.sucursalNames);
     final newUsuario = Map<String, String>.from(state.usuarioNames);
     final newCategoria = Map<String, String>.from(state.categoriaNames);
+    final newTemplateCategoria = Map<String, String>.from(
+      state.templateCategoryNames,
+    );
     final newProducto = Map<String, String>.from(state.productoNames);
     final newProveedor = Map<String, String>.from(state.proveedorNames);
     final newTipoGasto = Map<String, String>.from(state.tipoGastoNames);
@@ -651,6 +730,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         newSucursal,
         newUsuario,
         newCategoria,
+        newTemplateCategoria,
         newProducto,
         newProveedor,
         newTipoGasto,
@@ -677,6 +757,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       sucursalNames: newSucursal,
       usuarioNames: newUsuario,
       categoriaNames: newCategoria,
+      templateCategoryNames: newTemplateCategoria,
       productoNames: newProducto,
       proveedorNames: newProveedor,
       tipoGastoNames: newTipoGasto,
@@ -693,6 +774,8 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         return state.usuarioNames;
       case 'categories':
         return state.categoriaNames;
+      case 'category_templates':
+        return state.templateCategoryNames;
       case 'products':
         return state.productoNames;
       case 'suppliers':
@@ -710,6 +793,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     Map<String, String> sucursal,
     Map<String, String> usuario,
     Map<String, String> categoria,
+    Map<String, String> templateCategoria,
     Map<String, String> producto,
     Map<String, String> proveedor,
     Map<String, String> tipoGasto,
@@ -723,6 +807,8 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
         return usuario;
       case 'categories':
         return categoria;
+      case 'category_templates':
+        return templateCategoria;
       case 'products':
         return producto;
       case 'suppliers':
@@ -950,6 +1036,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       'companies',
       'branches',
       'categories',
+      'category_templates',
       'users',
       'products',
       'suppliers',

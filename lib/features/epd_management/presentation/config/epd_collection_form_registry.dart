@@ -159,6 +159,18 @@ class EpdCollectionFormRegistry {
         ];
       case 'supplier_assignments':
         return const ['proveedorId', 'sucursalId', 'productoIds', 'activo'];
+      case 'category_templates':
+        return const ['name', 'color', 'order', 'isActive'];
+      case 'catalog_templates':
+        return const [
+          'categoryId',
+          'name',
+          'priceUnit',
+          'priceLb',
+          'saleMode',
+          'cloudPhoto',
+          'isActive',
+        ];
       default:
         return const [];
     }
@@ -494,6 +506,68 @@ class EpdCollectionFormRegistry {
             label: 'Estado',
           ),
         };
+      case 'category_templates':
+        return {
+          'name': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre de Plantilla',
+            isRequired: true,
+          ),
+          'color': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.colorPicker,
+            label: 'Color',
+          ),
+          'order': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Orden',
+          ),
+          'isActive': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Activa',
+          ),
+        };
+      case 'catalog_templates':
+        return {
+          'categoryId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            optionsResolver: () =>
+                state.getDropdownOptions('category_templates'),
+            label: 'Plantilla de Categoria',
+            isRequired: true,
+          ),
+          'name': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre de Producto Plantilla',
+            isRequired: true,
+          ),
+          'priceUnit': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio Unidad',
+          ),
+          'priceLb': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Precio Libra',
+          ),
+          'saleMode': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.radioSelect,
+            options: [
+              {'value': 'UNIDAD', 'label': 'Solo Unidad'},
+              {'value': 'PESO', 'label': 'Solo Peso'},
+              {'value': 'AMBOS', 'label': 'Unidad y Peso'},
+            ],
+            label: 'Modo de Venta (Automatico)',
+            isReadOnly: true,
+          ),
+          'cloudPhoto': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Foto',
+            storagePath: 'products/templates/{id}/{timestamp}.jpg',
+          ),
+          'isActive': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Activo',
+          ),
+        };
       case 'companies':
         return {
           'nombreComercial': const DynamicFormFieldSchema(
@@ -675,9 +749,19 @@ class EpdCollectionFormRegistry {
       case 'inventory_transfers':
       case 'sales':
       case 'waste_reports':
-      case 'catalog_templates':
-      case 'category_templates':
         return {};
+      case 'category_templates':
+        return {'name': '', 'color': '0xFF2196F3', 'order': 0, 'isActive': 1};
+      case 'catalog_templates':
+        return {
+          'categoryId': '',
+          'name': '',
+          'priceUnit': 0.0,
+          'priceLb': 0.0,
+          'saleMode': 'AMBOS',
+          'cloudPhoto': '',
+          'isActive': 1,
+        };
       default:
         return {};
     }
