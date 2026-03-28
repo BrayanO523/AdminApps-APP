@@ -29,12 +29,18 @@ class EpdCollectionPayloadMapper {
         return _normalizeCombos(payload);
       case 'expense_categories':
         return _normalizeExpenseCategories(payload);
+      case 'expense_category_templates':
+        return _normalizeExpenseCategoryTemplates(payload);
       case 'expenses':
         return _normalizeExpenses(payload, state);
       case 'suppliers':
         return _normalizeSuppliers(payload);
       case 'supplier_assignments':
         return _normalizeSupplierAssignments(payload);
+      case 'category_templates':
+        return _normalizeCategoryTemplates(payload);
+      case 'catalog_templates':
+        return _normalizeCatalogTemplates(payload);
       default:
         return payload;
     }
@@ -121,6 +127,25 @@ class EpdCollectionPayloadMapper {
       return initialData;
     }
 
+    if (sectionId == 'expense_category_templates') {
+      if ((initialData['name'] == null ||
+              initialData['name'].toString().isEmpty) &&
+          initialData['nombre'] != null) {
+        initialData['name'] = initialData['nombre'];
+      }
+      initialData['color'] = _normalizeColorValue(
+        initialData['color'],
+        fallback: '0xFF2196F3',
+      );
+      initialData.remove('icon');
+
+      final activeValue = initialData['isActive'] ?? initialData['activo'];
+      initialData['isActive'] = _toFlagInt(activeValue, fallback: 1);
+      initialData.remove('activo');
+      initialData.remove('empresaId');
+      return initialData;
+    }
+
     if (sectionId == 'expenses') {
       if ((initialData['categoryId'] == null ||
               initialData['categoryId'].toString().isEmpty) &&
@@ -182,6 +207,96 @@ class EpdCollectionPayloadMapper {
       initialData.remove('IdSucursal');
       initialData.remove('isActive');
       initialData.remove('estado');
+      return initialData;
+    }
+
+    if (sectionId == 'category_templates') {
+      if ((initialData['name'] == null ||
+              initialData['name'].toString().trim().isEmpty) &&
+          initialData['NombreCategoria'] != null) {
+        initialData['name'] = initialData['NombreCategoria'];
+      }
+
+      final id = _firstNonEmpty([initialData['id']]);
+      if (id != null) {
+        initialData['id'] = id;
+      }
+
+      initialData['color'] = _normalizeColorValue(
+        initialData['color'] ?? initialData['Color'],
+        fallback: '0xFF2196F3',
+      );
+
+      initialData['order'] = _toInt(
+        initialData['order'] ??
+            initialData['OrdenVisual'] ??
+            initialData['Orden'] ??
+            initialData['sortOrder'],
+        0,
+      );
+      initialData['isActive'] = _toFlagInt(
+        initialData['isActive'] ??
+            initialData['activo'] ??
+            initialData['estado'] ??
+            initialData['is_active'],
+        fallback: 1,
+      );
+      return initialData;
+    }
+
+    if (sectionId == 'catalog_templates') {
+      if ((initialData['name'] == null ||
+              initialData['name'].toString().trim().isEmpty) &&
+          initialData['NombreProducto'] != null) {
+        initialData['name'] = initialData['NombreProducto'];
+      }
+
+      if ((initialData['categoryId'] == null ||
+              initialData['categoryId'].toString().trim().isEmpty) &&
+          initialData['IdCategoria'] != null) {
+        initialData['categoryId'] = initialData['IdCategoria'];
+      }
+      if ((initialData['categoryId'] == null ||
+              initialData['categoryId'].toString().trim().isEmpty) &&
+          initialData['categoryTemplateId'] != null) {
+        initialData['categoryId'] = initialData['categoryTemplateId'];
+      }
+
+      initialData['priceUnit'] = _toDouble(
+        initialData['priceUnit'] ??
+            initialData['preciounidad'] ??
+            initialData['price'],
+      );
+      initialData['priceLb'] = _toDouble(
+        initialData['priceLb'] ??
+            initialData['precioLibra'] ??
+            initialData['precio'],
+      );
+
+      initialData['saleMode'] = _deriveSaleModeByPrices(
+        initialData['priceUnit'],
+        initialData['priceLb'],
+      );
+
+      if ((initialData['cloudPhoto'] == null ||
+              initialData['cloudPhoto'].toString().trim().isEmpty) &&
+          initialData['fotoUrl'] != null) {
+        initialData['cloudPhoto'] = initialData['fotoUrl'];
+      }
+      if ((initialData['cloudPhoto'] == null ||
+              initialData['cloudPhoto'].toString().trim().isEmpty) &&
+          initialData['image'] != null) {
+        initialData['cloudPhoto'] = initialData['image'];
+      }
+
+      initialData['isActive'] = _toFlagInt(
+        initialData['isActive'] ??
+            initialData['Activo'] ??
+            initialData['activo'] ??
+            initialData['estado'] ??
+            initialData['is_active'],
+        fallback: 1,
+      );
       return initialData;
     }
 
@@ -386,6 +501,31 @@ class EpdCollectionPayloadMapper {
     return payload;
   }
 
+  static Map<String, dynamic> _normalizeExpenseCategoryTemplates(
+    Map<String, dynamic> payload,
+  ) {
+    payload['id'] = _firstNonEmpty([payload['id']]) ?? _generateUuidLike();
+
+    payload['name'] =
+        (payload['name'] ?? payload['nombre'])?.toString().trim() ?? '';
+
+    payload['color'] = _normalizeColorValue(
+      payload['color'],
+      fallback: '0xFF2196F3',
+    );
+
+    final activeRaw = payload['isActive'] ?? payload['activo'];
+    final isActiveFlag = _toFlagInt(activeRaw, fallback: 1);
+    payload['isActive'] = isActiveFlag == 1;
+
+    payload.remove('nombre');
+    payload.remove('descripcion');
+    payload.remove('activo');
+    payload.remove('icon');
+    payload.remove('empresaId');
+    return payload;
+  }
+
   static Map<String, dynamic> _normalizeExpenses(
     Map<String, dynamic> payload,
     EpdDashboardState state,
@@ -496,6 +636,105 @@ class EpdCollectionPayloadMapper {
     return payload;
   }
 
+  static Map<String, dynamic> _normalizeCategoryTemplates(
+    Map<String, dynamic> payload,
+  ) {
+    final id =
+        _firstNonEmpty([payload['id'], payload['templateId']]) ??
+        _generateUuidLike();
+    final name =
+        (payload['name'] ??
+                payload['NombreCategoria'] ??
+                payload['nombre'] ??
+                '')
+            .toString()
+            .trim();
+    final color = _normalizeColorValue(
+      payload['color'] ?? payload['Color'],
+      fallback: '0xFF2196F3',
+    );
+    final order = _toInt(
+      payload['order'] ??
+          payload['OrdenVisual'] ??
+          payload['Orden'] ??
+          payload['sortOrder'],
+      0,
+    );
+    final isActive = _toFlagInt(
+      payload['isActive'] ??
+          payload['activo'] ??
+          payload['estado'] ??
+          payload['is_active'],
+      fallback: 1,
+    );
+
+    return {
+      'id': id,
+      'name': name,
+      'color': color,
+      'order': order,
+      'isActive': isActive == 1,
+    };
+  }
+
+  static Map<String, dynamic> _normalizeCatalogTemplates(
+    Map<String, dynamic> payload,
+  ) {
+    final id =
+        _firstNonEmpty([payload['id'], payload['templateId']]) ??
+        _generateUuidLike();
+    final categoryId =
+        (payload['categoryId'] ??
+                payload['IdCategoria'] ??
+                payload['categoryTemplateId'] ??
+                '')
+            .toString()
+            .trim();
+    final name =
+        (payload['name'] ??
+                payload['NombreProducto'] ??
+                payload['nombre'] ??
+                '')
+            .toString()
+            .trim();
+    final priceUnit = _toDouble(
+      payload['priceUnit'] ??
+          payload['preciounidad'] ??
+          payload['price'] ??
+          payload['precio'],
+    );
+    final priceLb = _toDouble(
+      payload['priceLb'] ?? payload['precioLibra'] ?? payload['price_lb'],
+    );
+    final saleMode = _deriveSaleModeByPrices(priceUnit, priceLb);
+    final cloudPhoto =
+        _firstNonEmpty([
+          payload['cloudPhoto'],
+          payload['fotoUrl'],
+          payload['image'],
+        ]) ??
+        '';
+    final isActive = _toFlagInt(
+      payload['isActive'] ??
+          payload['Activo'] ??
+          payload['activo'] ??
+          payload['estado'] ??
+          payload['is_active'],
+      fallback: 1,
+    );
+
+    return {
+      'id': id,
+      'categoryId': categoryId,
+      'name': name,
+      'priceUnit': priceUnit,
+      'priceLb': priceLb,
+      'saleMode': saleMode,
+      'cloudPhoto': cloudPhoto,
+      'isActive': isActive == 1,
+    };
+  }
+
   static int _toFlagInt(dynamic rawValue, {int fallback = 1}) {
     if (rawValue == null) return fallback;
     if (rawValue is bool) return rawValue ? 1 : 0;
@@ -558,6 +797,17 @@ class EpdCollectionPayloadMapper {
     }
 
     return fallback;
+  }
+
+  static String _deriveSaleModeByPrices(
+    dynamic priceUnitRaw,
+    dynamic priceLbRaw,
+  ) {
+    final hasUnit = _toDouble(priceUnitRaw) > 0;
+    final hasLb = _toDouble(priceLbRaw) > 0;
+    if (hasUnit && hasLb) return 'AMBOS';
+    if (hasLb) return 'PESO';
+    return 'UNIDAD';
   }
 
   static List<Map<String, dynamic>> _normalizeSupplierProducts(

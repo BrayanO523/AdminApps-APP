@@ -24,28 +24,10 @@ const List<EpdSection> epdSections = [
     icon: Icons.business_rounded,
   ),
   EpdSection(
-    id: 'branches',
-    label: 'Sucursales',
-    collection: 'branches',
-    icon: Icons.store_mall_directory_rounded,
-  ),
-  EpdSection(
     id: 'users',
     label: 'Usuarios',
     collection: 'users',
     icon: Icons.people_rounded,
-  ),
-  EpdSection(
-    id: 'clients',
-    label: 'Clientes',
-    collection: 'clients',
-    icon: Icons.person_pin_rounded,
-  ),
-  EpdSection(
-    id: 'products',
-    label: 'Productos',
-    collection: 'products',
-    icon: Icons.inventory_2_rounded,
   ),
   EpdSection(
     id: 'categories',
@@ -54,16 +36,28 @@ const List<EpdSection> epdSections = [
     icon: Icons.category_rounded,
   ),
   EpdSection(
+    id: 'products',
+    label: 'Productos',
+    collection: 'products',
+    icon: Icons.inventory_2_rounded,
+  ),
+  EpdSection(
+    id: 'branches',
+    label: 'Sucursales',
+    collection: 'branches',
+    icon: Icons.store_mall_directory_rounded,
+  ),
+  EpdSection(
+    id: 'clients',
+    label: 'Clientes',
+    collection: 'clients',
+    icon: Icons.person_pin_rounded,
+  ),
+  EpdSection(
     id: 'combos',
     label: 'Combos',
     collection: 'combos',
     icon: Icons.fastfood_rounded,
-  ),
-  EpdSection(
-    id: 'sales',
-    label: 'Ventas',
-    collection: 'sales',
-    icon: Icons.point_of_sale_rounded,
   ),
   EpdSection(
     id: 'expense_categories',
@@ -96,6 +90,12 @@ const List<EpdSection> epdSections = [
     icon: Icons.transfer_within_a_station_rounded,
   ),
   EpdSection(
+    id: 'sales',
+    label: 'Ventas',
+    collection: 'sales',
+    icon: Icons.point_of_sale_rounded,
+  ),
+  EpdSection(
     id: 'suppliers',
     label: 'Proveedores',
     collection: 'suppliers',
@@ -114,15 +114,21 @@ const List<EpdSection> epdSections = [
     icon: Icons.delete_sweep_rounded,
   ),
   EpdSection(
-    id: 'catalog_templates',
-    label: 'Plantillas Catalogo',
-    collection: 'catalog_templates',
-    icon: Icons.list_alt_rounded,
+    id: 'expense_category_templates',
+    label: 'Plantillas Tipo Gasto',
+    collection: 'expense_category_templates',
+    icon: Icons.palette_outlined,
   ),
   EpdSection(
     id: 'category_templates',
     label: 'Plantillas Categoria',
     collection: 'category_templates',
     icon: Icons.style_rounded,
+  ),
+  EpdSection(
+    id: 'catalog_templates',
+    label: 'Plantillas Catalogo',
+    collection: 'catalog_templates',
+    icon: Icons.list_alt_rounded,
   ),
 ];
