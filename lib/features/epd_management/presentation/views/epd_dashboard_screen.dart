@@ -29,6 +29,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   String? _selectedSearchField;
   static const int _pageSize = 20;
   int _currentPage = 0;
+  bool _isApplyingExpenseTemplates = false;
 
   Future<String> _uploadImageToStorage(
     List<int> bytes,
@@ -140,6 +141,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     'products',
     'combos',
     'expense_categories',
+    'expense_category_templates',
     'expenses',
     'suppliers',
     'supplier_assignments',
@@ -151,6 +153,20 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       !_mutableSections.contains(sectionId);
 
   bool _isEditEnabled(String sectionId) => _mutableSections.contains(sectionId);
+
+  Future<void> _withExpenseTemplateApplyLock(
+    Future<void> Function() action,
+  ) async {
+    if (_isApplyingExpenseTemplates || !mounted) return;
+    setState(() => _isApplyingExpenseTemplates = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingExpenseTemplates = false);
+      }
+    }
+  }
 
   void _clearFilters() {
     _searchController.clear();
@@ -289,11 +305,34 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                                   : null,
                               // BotÃƒÆ’Ã‚Â³n extra para ajuste atÃƒÆ’Ã‚Â³mico de stock
                               onExtraAction: state.activeSection == 'inventory'
-                                  ? (row) => _showInventoryAdjustDialog(row)
+                                  ? (row) {
+                                      unawaited(
+                                        _showInventoryAdjustDialog(row),
+                                      );
+                                    }
+                                  : state.activeSection ==
+                                        'expense_category_templates'
+                                  ? (row) {
+                                      unawaited(
+                                        _showApplyExpenseTemplateDialog(
+                                          state,
+                                          row,
+                                        ),
+                                      );
+                                    }
                                   : null,
-                              extraActionIcon: Icons.swap_vert_circle_rounded,
-                              extraActionColor: const Color(0xFF059669),
-                              extraActionTooltip: 'Ajustar Stock',
+                              extraActionIcon:
+                                  state.activeSection == 'inventory'
+                                  ? Icons.swap_vert_circle_rounded
+                                  : Icons.publish_rounded,
+                              extraActionColor:
+                                  state.activeSection == 'inventory'
+                                  ? const Color(0xFF059669)
+                                  : const Color(0xFF7C3AED),
+                              extraActionTooltip:
+                                  state.activeSection == 'inventory'
+                                  ? 'Ajustar Stock'
+                                  : 'Aplicar a Empresa',
                               onEdit: _isEditEnabled(state.activeSection)
                                   ? (row) => _showEditDialog(row)
                                   : null,
@@ -366,6 +405,12 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       (s) => s.id == state.activeSection,
       orElse: () => epdSections.first,
     );
+    final isExpenseTemplateSection =
+        state.activeSection == 'expense_category_templates';
+    final canApplyExpenseTemplates =
+        isExpenseTemplateSection &&
+        !state.isLoading &&
+        !_isApplyingExpenseTemplates;
     final canCreate =
         !_isCreateDisabled(state.activeSection) && !state.isLoading;
     final content = Row(
@@ -615,6 +660,18 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         }),
         const SizedBox(width: 12),
         if (isMobile)
+          if (isExpenseTemplateSection)
+            IconButton(
+              onPressed: canApplyExpenseTemplates
+                  ? () {
+                      unawaited(_showApplyAllExpenseTemplatesDialog(state));
+                    }
+                  : null,
+              icon: const Icon(Icons.publish_rounded, size: 24),
+              color: const Color(0xFF7C3AED),
+              tooltip: 'Aplicar todas las plantillas',
+            ),
+        if (isMobile)
           IconButton(
             onPressed: canCreate ? () => _showCreateDialog(state) : null,
             icon: const Icon(Icons.add_circle_rounded, size: 28),
@@ -623,7 +680,30 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                 ? 'Crear Documento'
                 : 'Creacion deshabilitada para esta seccion',
           )
-        else
+        else if (isExpenseTemplateSection) ...[
+          OutlinedButton.icon(
+            onPressed: canApplyExpenseTemplates
+                ? () {
+                    unawaited(_showApplyAllExpenseTemplatesDialog(state));
+                  }
+                : null,
+            icon: const Icon(Icons.publish_rounded, size: 16),
+            label: Text(
+              'Aplicar Plantillas',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF7C3AED),
+              side: const BorderSide(color: Color(0xFF7C3AED)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        if (!isMobile)
           ElevatedButton.icon(
             onPressed: canCreate ? () => _showCreateDialog(state) : null,
             icon: const Icon(Icons.add_rounded, size: 18),
@@ -1286,6 +1366,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     // Inyectar automÃƒÆ’Ã‚Â¡ticamente el contexto activo (empresa seleccionada, filtros de bÃƒÆ’Ã‚Âºsqueda)
     final contextHidden = <String>[];
     final isGlobalTemplateSection =
+        currentState.activeSection == 'expense_category_templates' ||
         currentState.activeSection == 'category_templates' ||
         currentState.activeSection == 'catalog_templates';
 
@@ -1504,6 +1585,278 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   /// Llama al endpoint POST /inventario-ajuste que en un Batch:
   ///   1) Actualiza el campo `stock` del documento en `inventory`
   ///   2) Crea un registro de auditorÃƒÆ’Ã‚Â­a en `inventory_transactions`
+  Future<({String empresaId, String empresaLabel})?>
+  _pickEmpresaForExpenseTemplateApply(
+    EpdDashboardState state, {
+    required String title,
+    required String subtitle,
+  }) async {
+    final companyOptions = state.getDropdownOptions('companies');
+    if (companyOptions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay empresas disponibles para aplicar la plantilla.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return null;
+    }
+
+    String? preselectedEmpresaId;
+    if (state.selectedEmpresas.length == 1) {
+      final selected = state.selectedEmpresas.first;
+      preselectedEmpresaId =
+          selected['id']?.toString().trim().isNotEmpty == true
+          ? selected['id']?.toString().trim()
+          : selected['value']?.toString().trim();
+    }
+    preselectedEmpresaId ??=
+        companyOptions.first['value']?.toString().trim().isNotEmpty == true
+        ? companyOptions.first['value'].toString().trim()
+        : null;
+
+    final formKey = GlobalKey<FormState>();
+    String? selectedEmpresaId = preselectedEmpresaId;
+
+    final pickedEmpresaId = await showDialog<String>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setInner) => Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            width: 480,
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  DropdownButtonFormField<String>(
+                    value: selectedEmpresaId,
+                    items: companyOptions
+                        .map(
+                          (option) => DropdownMenuItem<String>(
+                            value: option['value']?.toString(),
+                            child: Text(
+                              option['label']?.toString() ??
+                                  option['value']?.toString() ??
+                                  '',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setInner(() => selectedEmpresaId = value),
+                    decoration: InputDecoration(
+                      labelText: 'Empresa destino',
+                      labelStyle: GoogleFonts.outfit(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    validator: (value) {
+                      final trimmed = value?.trim() ?? '';
+                      if (trimmed.isEmpty) return 'Selecciona una empresa';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'Cancelar',
+                          style: GoogleFonts.outfit(
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          if (!(formKey.currentState?.validate() ?? false)) {
+                            return;
+                          }
+                          Navigator.pop(ctx, selectedEmpresaId?.trim());
+                        },
+                        icon: const Icon(Icons.publish_rounded, size: 16),
+                        label: Text(
+                          'Aplicar',
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final empresaId = pickedEmpresaId?.trim() ?? '';
+    if (empresaId.isEmpty) return null;
+
+    String companyLabel = empresaId;
+    for (final option in companyOptions) {
+      final optionValue = option['value']?.toString() ?? '';
+      if (optionValue == empresaId) {
+        companyLabel = option['label']?.toString() ?? empresaId;
+        break;
+      }
+    }
+
+    return (empresaId: empresaId, empresaLabel: companyLabel);
+  }
+
+  Future<void> _showApplyAllExpenseTemplatesDialog(
+    EpdDashboardState state,
+  ) async {
+    try {
+      await _withExpenseTemplateApplyLock(() async {
+        final picked = await _pickEmpresaForExpenseTemplateApply(
+          state,
+          title: 'Aplicar Todas las Plantillas',
+          subtitle:
+              'Se aplicarán todos los tipos de gasto plantilla a la empresa seleccionada.',
+        );
+        if (picked == null || !mounted) return;
+
+        final error = await ref
+            .read(epdDashboardProvider.notifier)
+            .applyAllExpenseCategoryTemplatesToCompany(
+              empresaId: picked.empresaId,
+            );
+
+        if (!mounted) return;
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Plantillas de tipo de gasto aplicadas a "${picked.empresaLabel}".',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al aplicar plantillas: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showApplyExpenseTemplateDialog(
+    EpdDashboardState state,
+    Map<String, dynamic> row,
+  ) async {
+    try {
+      await _withExpenseTemplateApplyLock(() async {
+        final templateId = (row['id'] ?? '').toString().trim();
+        if (templateId.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se pudo identificar la plantilla seleccionada.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        final templateName =
+            (row['name'] ?? row['nombre'] ?? '').toString().trim().isEmpty
+            ? templateId
+            : (row['name'] ?? row['nombre']).toString().trim();
+
+        final picked = await _pickEmpresaForExpenseTemplateApply(
+          state,
+          title: 'Aplicar Plantilla de Tipo de Gasto',
+          subtitle: 'Plantilla: $templateName',
+        );
+        if (picked == null || !mounted) return;
+
+        final error = await ref
+            .read(epdDashboardProvider.notifier)
+            .applyExpenseCategoryTemplateToCompany(
+              templateId: templateId,
+              empresaId: picked.empresaId,
+            );
+
+        if (!mounted) return;
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Plantilla "$templateName" aplicada a la empresa "${picked.empresaLabel}".',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al importar plantilla: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _showInventoryAdjustDialog(Map<String, dynamic> row) async {
     final cantidadCtrl = TextEditingController();
     final motivoCtrl = TextEditingController();

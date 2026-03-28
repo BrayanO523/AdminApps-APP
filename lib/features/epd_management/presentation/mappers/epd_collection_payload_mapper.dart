@@ -29,6 +29,8 @@ class EpdCollectionPayloadMapper {
         return _normalizeCombos(payload);
       case 'expense_categories':
         return _normalizeExpenseCategories(payload);
+      case 'expense_category_templates':
+        return _normalizeExpenseCategoryTemplates(payload);
       case 'expenses':
         return _normalizeExpenses(payload, state);
       case 'suppliers':
@@ -122,6 +124,25 @@ class EpdCollectionPayloadMapper {
       final activeValue = initialData['isActive'] ?? initialData['activo'];
       initialData['isActive'] = _toFlagInt(activeValue, fallback: 1);
       initialData.remove('activo');
+      return initialData;
+    }
+
+    if (sectionId == 'expense_category_templates') {
+      if ((initialData['name'] == null ||
+              initialData['name'].toString().isEmpty) &&
+          initialData['nombre'] != null) {
+        initialData['name'] = initialData['nombre'];
+      }
+      initialData['color'] = _normalizeColorValue(
+        initialData['color'],
+        fallback: '0xFF2196F3',
+      );
+      initialData.remove('icon');
+
+      final activeValue = initialData['isActive'] ?? initialData['activo'];
+      initialData['isActive'] = _toFlagInt(activeValue, fallback: 1);
+      initialData.remove('activo');
+      initialData.remove('empresaId');
       return initialData;
     }
 
@@ -477,6 +498,31 @@ class EpdCollectionPayloadMapper {
     payload.remove('descripcion');
     payload.remove('activo');
     payload.remove('icon');
+    return payload;
+  }
+
+  static Map<String, dynamic> _normalizeExpenseCategoryTemplates(
+    Map<String, dynamic> payload,
+  ) {
+    payload['id'] = _firstNonEmpty([payload['id']]) ?? _generateUuidLike();
+
+    payload['name'] =
+        (payload['name'] ?? payload['nombre'])?.toString().trim() ?? '';
+
+    payload['color'] = _normalizeColorValue(
+      payload['color'],
+      fallback: '0xFF2196F3',
+    );
+
+    final activeRaw = payload['isActive'] ?? payload['activo'];
+    final isActiveFlag = _toFlagInt(activeRaw, fallback: 1);
+    payload['isActive'] = isActiveFlag == 1;
+
+    payload.remove('nombre');
+    payload.remove('descripcion');
+    payload.remove('activo');
+    payload.remove('icon');
+    payload.remove('empresaId');
     return payload;
   }
 

@@ -60,6 +60,10 @@ class EpdCollectionFormRegistry {
       hidden.add('icon');
     }
 
+    if (sectionId == 'expense_category_templates') {
+      hidden.add('icon');
+    }
+
     if (sectionId == 'companies') {
       hidden.remove('activo');
     }
@@ -136,6 +140,8 @@ class EpdCollectionFormRegistry {
           'activo',
         ];
       case 'expense_categories':
+        return const ['name', 'color', 'isActive'];
+      case 'expense_category_templates':
         return const ['name', 'color', 'isActive'];
       case 'expenses':
         return const [
@@ -414,6 +420,22 @@ class EpdCollectionFormRegistry {
             label: 'Estado',
           ),
         };
+      case 'expense_category_templates':
+        return {
+          'name': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Nombre de Plantilla',
+            isRequired: true,
+          ),
+          'color': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.colorPicker,
+            label: 'Color',
+          ),
+          'isActive': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.boolean,
+            label: 'Estado',
+          ),
+        };
       case 'expenses':
         return {
           'amount': const DynamicFormFieldSchema(
@@ -672,6 +694,8 @@ class EpdCollectionFormRegistry {
           'empresaId': '',
           'isActive': 1,
         };
+      case 'expense_category_templates':
+        return {'name': '', 'color': '0xFF2196F3', 'isActive': 1};
       case 'expenses':
         return {
           'categoryId': '',

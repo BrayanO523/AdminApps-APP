@@ -149,6 +149,7 @@ class EpdDashboardState implements ResolvableState {
     'products': ['IdProducto', 'id'],
     'suppliers': ['idProveedor', 'proveedorId', 'id'],
     'expense_categories': ['id'],
+    'expense_category_templates': ['id'],
     'expenses': ['id'],
     'combos': ['idCombo', 'IdCombo', 'id'],
     'supplier_assignments': ['id'],
@@ -450,6 +451,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
   final EpdRemoteDataSource _dataSource;
   static const Set<String> _globalSections = {
     'companies',
+    'expense_category_templates',
     'catalog_templates',
     'category_templates',
   };
@@ -1037,6 +1039,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       'branches',
       'categories',
       'category_templates',
+      'expense_category_templates',
       'users',
       'products',
       'suppliers',
@@ -1242,6 +1245,55 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
       },
       (_) async {
         // Recargar inventory e inventory_transactions tras el ajuste
+        await selectSection(state.activeSection);
+        return null;
+      },
+    );
+  }
+
+  /// Aplica una plantilla global de tipo de gasto a una empresa y refresca
+  /// tipos de gasto para que quede disponible de inmediato en la web.
+  Future<String?> applyExpenseCategoryTemplateToCompany({
+    required String templateId,
+    required String empresaId,
+  }) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final result = await _dataSource.applyExpenseCategoryTemplate(
+      templateId: templateId,
+      empresaId: empresaId,
+    );
+
+    return result.fold(
+      (failure) {
+        state = state.copyWith(isLoading: false, errorMessage: failure.message);
+        return failure.message;
+      },
+      (_) async {
+        await _refreshDependenciesIfNeeded('expense_categories');
+        await selectSection(state.activeSection);
+        return null;
+      },
+    );
+  }
+
+  /// Aplica todas las plantillas globales de tipo de gasto a una empresa.
+  Future<String?> applyAllExpenseCategoryTemplatesToCompany({
+    required String empresaId,
+  }) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final result = await _dataSource.applyAllExpenseCategoryTemplates(
+      empresaId: empresaId,
+    );
+
+    return result.fold(
+      (failure) {
+        state = state.copyWith(isLoading: false, errorMessage: failure.message);
+        return failure.message;
+      },
+      (_) async {
+        await _refreshDependenciesIfNeeded('expense_categories');
         await selectSection(state.activeSection);
         return null;
       },
