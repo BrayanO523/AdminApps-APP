@@ -389,6 +389,11 @@ class EpdDashboardState implements ResolvableState {
 // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ViewModel ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
   final EpdRemoteDataSource _dataSource;
+  static const Set<String> _globalSections = {
+    'companies',
+    'catalog_templates',
+    'category_templates',
+  };
 
   EpdDashboardViewModel(this._dataSource) : super(const EpdDashboardState()) {
     _loadDependencies();
@@ -748,7 +753,7 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
   }
 
   String? _getEmpresaContextParam(String sectionId) {
-    if (sectionId == 'companies') return null;
+    if (_globalSections.contains(sectionId)) return null;
 
     final ids = state._selectedEmpresaIds().toList();
     if (ids.isEmpty) return null;
@@ -789,7 +794,8 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     final currentValue = keepExistingSearch ? state.searchValue : null;
     final currentOperator = keepExistingSearch ? state.searchOperator : null;
 
-    if (sectionId != 'companies' && state.selectedEmpresas.isEmpty) {
+    if (!_globalSections.contains(sectionId) &&
+        state.selectedEmpresas.isEmpty) {
       state = state.copyWith(
         activeSection: sectionId,
         isLoading: false,
