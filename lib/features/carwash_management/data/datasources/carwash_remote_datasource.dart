@@ -5,6 +5,10 @@ import '../../../../core/errors/failures.dart';
 import '../../../../core/network/dio_client.dart';
 
 typedef PaginatedResponse = ({List<Map<String, dynamic>> data, int total});
+typedef EitherFailurePaginated = Either<Failure, PaginatedResponse>;
+typedef EitherFailureDocument = Either<Failure, Map<String, dynamic>?>;
+typedef EitherFailureMutation = Either<Failure, Map<String, dynamic>>;
+typedef EitherFailureVoid = Either<Failure, void>;
 
 class CarwashRemoteDataSource {
   final DioClient _dioClient;
