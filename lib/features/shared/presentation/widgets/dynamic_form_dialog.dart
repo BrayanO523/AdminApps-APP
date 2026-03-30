@@ -67,9 +67,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   /// Campos detectados como JSON arrays (String → List).
   /// Clave: fieldName, Valor: lista mutable de items.
   final Map<String, List<String>> _jsonArrayFields = {};
+  final Map<String, Map<String, TextEditingController>> _mapNumberFields = {};
 
   /// Controller temporal para añadir un nuevo item a un JSON array field.
   final Map<String, TextEditingController> _arrayAddControllers = {};
+  final Map<String, TextEditingController> _mapKeyAddControllers = {};
 
   /// Imágenes seleccionadas localmente que se subirán al presionar Guardar.
   final Map<String, Uint8List> _pendingImageBytes = {};
@@ -88,7 +90,17 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       final value = entry.value;
 
       // Si el valor es una Lista directa → no editar (objetos complejos)
-      if (value is Map) continue;
+      if (value is Map) {
+        final mapControllers = <String, TextEditingController>{};
+        for (final mapEntry in value.entries) {
+          mapControllers[mapEntry.key.toString()] = TextEditingController(
+            text: mapEntry.value?.toString() ?? '',
+          );
+        }
+        _mapNumberFields[key] = mapControllers;
+        _mapKeyAddControllers[key] = TextEditingController();
+        continue;
+      }
 
       // Si el valor es un String que se parece a un JSON array → tratar especial
       if (value is String &&
@@ -129,6 +141,14 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     }
     for (final c in _arrayAddControllers.values) {
       c.dispose();
+    }
+    for (final controllers in _mapNumberFields.values) {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+    }
+    for (final controller in _mapKeyAddControllers.values) {
+      controller.dispose();
     }
     super.dispose();
   }
@@ -270,6 +290,19 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     }
 
     // Subir imágenes pendientes al guardar.
+    for (final entry in _mapNumberFields.entries) {
+      final values = <String, dynamic>{};
+      for (final mapEntry in entry.value.entries) {
+        final mapKey = mapEntry.key.trim();
+        if (mapKey.isEmpty) continue;
+        final parsed = double.tryParse(
+          mapEntry.value.text.trim().replaceAll(',', '.'),
+        );
+        values[mapKey] = parsed ?? 0;
+      }
+      result[entry.key] = values;
+    }
+
     if (_pendingImageBytes.isNotEmpty) {
       if (widget.onUploadImage == null) {
         if (!mounted) return;
@@ -373,8 +406,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   static const Map<String, String> _friendlyFieldLabels = {
     'id': 'ID',
     'empresaId': 'Empresa',
+    'empresa_id': 'Empresa',
     'adminId': 'Administrador',
     'sucursalId': 'Sucursal',
+    'sucursal_id': 'Sucursal',
+    'sucursal_ids': 'Sucursales',
     'IdSucursal': 'Sucursal',
     'IdSucursalesAsignadas': 'Sucursales Asignadas',
     'selected_categories': 'Categorías Permitidas',
@@ -407,6 +443,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'ModoVventa': 'Modo de Venta',
     'esGlobal': 'Alcance del Proveedor',
     'activo': 'Estado',
+    'precios': 'Precios por Vehículo',
     'sync_status': 'Estado de Sincronización',
   };
 
@@ -500,6 +537,10 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       return _buildImageUploadField(key, schema);
     }
 
+    if (schema != null && schema.type == DynamicFormFieldType.keyValueNumberMap) {
+      return _buildMapNumberField(key, schema);
+    }
+
     if (_jsonArrayFields.containsKey(key)) {
       return _buildArrayField(key);
     }
@@ -563,6 +604,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     final allFieldKeys = [
       ..._controllers.keys.where((k) => !hiddenSet.contains(k)),
       ..._jsonArrayFields.keys.where((k) => !hiddenSet.contains(k)),
+      ..._mapNumberFields.keys.where((k) => !hiddenSet.contains(k)),
     ];
     final visibleFieldKeys = _applyConditionalVisibility(allFieldKeys);
 
@@ -869,131 +911,380 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   // ── Combo Box Búsqueda de Única Selección ──
+  Widget _buildMapNumberField(String key, DynamicFormFieldSchema schema) {
+    final label = _resolveFieldLabel(key, explicitLabel: schema.label);
+    final controllers = _mapNumberFields.putIfAbsent(key, () => {});
+    final addKeyController = _mapKeyAddControllers.putIfAbsent(
+      key,
+      () => TextEditingController(),
+    );
+    final options = schema.resolveOptions();
+    final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
+
+    for (final option in options) {
+      final optionKey = option['value']?.toString() ?? '';
+      if (optionKey.isEmpty || controllers.containsKey(optionKey)) continue;
+      controllers[optionKey] = TextEditingController(
+        text: _formData[key] is Map && _formData[key][optionKey] != null
+            ? _formData[key][optionKey].toString()
+            : '',
+      );
+    }
+
+    final sortedKeys = controllers.keys.toList()..sort();
+
+    return StatefulBuilder(
+      builder: (context, setInnerState) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(label, style: _fieldLabelStyle()),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0F2FE),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'PRECIOS',
+                    style: GoogleFonts.outfit(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0369A1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Tipo de vehiculo',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Precio',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                  if (schema.allowCustomEntries && !isReadOnly)
+                    const SizedBox(width: 40),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (sortedKeys.isEmpty)
+              Text(
+                'Agrega los tipos de vehiculo y su precio.',
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ...sortedKeys.map((mapKey) {
+              final valueController = controllers[mapKey]!;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        initialValue: mapKey,
+                        readOnly: true,
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          color: const Color(0xFF64748B),
+                        ),
+                        decoration: _fieldDecoration(isReadOnly: true),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextFormField(
+                        controller: valueController,
+                        readOnly: isReadOnly,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          color: isReadOnly
+                              ? const Color(0xFF64748B)
+                              : _inputTextColor,
+                        ),
+                        decoration: _fieldDecoration(
+                          hintText: '0',
+                          prefixIcon: const Icon(
+                            Icons.attach_money_rounded,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (schema.allowCustomEntries && !isReadOnly)
+                      IconButton(
+                        onPressed: () {
+                          final controller = controllers.remove(mapKey);
+                          controller?.dispose();
+                          setInnerState(() {});
+                          setState(() {});
+                        },
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.red,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+            if (schema.allowCustomEntries && !isReadOnly) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: addKeyController,
+                      style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        color: _inputTextColor,
+                      ),
+                      decoration: _fieldDecoration(
+                        hintText: 'Tipo de vehiculo...',
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () {
+                      final newKey = addKeyController.text.trim();
+                      if (newKey.isEmpty || controllers.containsKey(newKey)) {
+                        return;
+                      }
+                      controllers[newKey] = TextEditingController(text: '0');
+                      addKeyController.clear();
+                      setInnerState(() {});
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.add_circle_rounded),
+                    color: _accentColor,
+                    tooltip: 'Agregar tipo de vehiculo',
+                  ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildSingleDropdownField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
     final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
     final label = _resolveFieldLabel(key, explicitLabel: schema.label);
-    // Resolve options lazily at render time to always get the latest state
-    final options = schema.resolveOptions();
+    final addController = _mapKeyAddControllers.putIfAbsent(
+      '__dropdown__$key',
+      () => TextEditingController(),
+    );
 
-    Map<String, dynamic>? selectedItem;
-    if (controller.text.isNotEmpty) {
-      try {
-        selectedItem = options.firstWhere(
-          (o) => o['value'].toString() == controller.text,
-        );
-      } catch (_) {}
-    }
+    return StatefulBuilder(
+      builder: (context, setInnerState) {
+        final options = schema.resolveOptions().map((e) => Map<String, dynamic>.from(e)).toList();
+        final currentValue = controller.text.trim();
+        if (currentValue.isNotEmpty &&
+            !options.any((option) => option['value'].toString() == currentValue)) {
+          options.add({'value': currentValue, 'label': currentValue});
+        }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: _fieldLabelStyle()),
-        const SizedBox(height: 6),
-        DropdownSearch<Map<String, dynamic>>(
-          enabled: !isReadOnly,
-          items: (filter, loadProps) => options,
-          compareFn: (item1, item2) => item1['value'] == item2['value'],
-          itemAsString: (item) => item['label']?.toString() ?? '',
-          selectedItem: selectedItem,
-          dropdownBuilder: (context, item) {
-            final text = item?['label']?.toString() ?? 'Seleccionar...';
-            final hasValue = item != null;
-            return Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                fontWeight: hasValue ? FontWeight.w600 : FontWeight.w500,
-                color: hasValue
-                    ? const Color(0xFF0F172A)
-                    : const Color(0xFF64748B),
-              ),
+        Map<String, dynamic>? selectedItem;
+        if (controller.text.isNotEmpty) {
+          try {
+            selectedItem = options.firstWhere(
+              (o) => o['value'].toString() == controller.text,
             );
-          },
-          suffixProps: DropdownSuffixProps(
-            dropdownButtonProps: DropdownButtonProps(
-              iconClosed: const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 22,
-                color: Color(0xFF1E293B),
-              ),
-              iconOpened: const Icon(
-                Icons.keyboard_arrow_up_rounded,
-                size: 22,
-                color: Color(0xFF1E293B),
-              ),
-            ),
-          ),
-          onChanged: (val) {
-            if (val != null) {
-              controller.text = val['value']?.toString() ?? '';
-            } else {
-              controller.clear();
-            }
-          },
-          popupProps: PopupProps.menu(
-            showSearchBox: true,
-            showSelectedItems: true,
-            menuProps: const MenuProps(
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.white,
-              elevation: 8,
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
-            searchFieldProps: TextFieldProps(
-              decoration: _fieldDecoration(
-                hintText: 'Buscar...',
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-              ),
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                color: const Color(0xFF0F172A),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            itemBuilder: (context, item, isSelected, isHovered) {
-              final background = isSelected
-                  ? const Color(0xFFE0E7FF)
-                  : (isHovered ? const Color(0xFFF8FAFC) : Colors.white);
-              return Container(
-                color: background,
-                child: ListTile(
-                  dense: true,
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    size: 18,
-                    color: isSelected
-                        ? const Color(0xFF3730A3)
+          } catch (_) {}
+        }
+
+        void addCustomOption() {
+          final newValue = addController.text.trim();
+          if (newValue.isEmpty) return;
+          controller.text = newValue;
+          addController.clear();
+          setInnerState(() {});
+          setState(() {});
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: _fieldLabelStyle()),
+            const SizedBox(height: 6),
+            DropdownSearch<Map<String, dynamic>>(
+              enabled: !isReadOnly,
+              items: (filter, loadProps) => options,
+              compareFn: (item1, item2) => item1['value'] == item2['value'],
+              itemAsString: (item) => item['label']?.toString() ?? '',
+              selectedItem: selectedItem,
+              dropdownBuilder: (context, item) {
+                final text = item?['label']?.toString() ?? 'Seleccionar...';
+                final hasValue = item != null;
+                return Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: hasValue ? FontWeight.w600 : FontWeight.w500,
+                    color: hasValue
+                        ? const Color(0xFF0F172A)
                         : const Color(0xFF64748B),
                   ),
-                  title: Text(
-                    item['label']?.toString() ?? '',
-                    style: GoogleFonts.outfit(
-                      fontSize: 14,
-                      fontWeight: isSelected
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: isSelected
-                          ? const Color(0xFF1E1B4B)
-                          : const Color(0xFF0F172A),
-                    ),
+                );
+              },
+              suffixProps: DropdownSuffixProps(
+                dropdownButtonProps: DropdownButtonProps(
+                  iconClosed: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 22,
+                    color: Color(0xFF1E293B),
+                  ),
+                  iconOpened: const Icon(
+                    Icons.keyboard_arrow_up_rounded,
+                    size: 22,
+                    color: Color(0xFF1E293B),
                   ),
                 ),
-              );
-            },
-          ),
-          decoratorProps: DropDownDecoratorProps(
-            decoration: _fieldDecoration(isReadOnly: isReadOnly),
-          ),
-        ),
-      ],
+              ),
+              onChanged: (val) {
+                if (val != null) {
+                  controller.text = val['value']?.toString() ?? '';
+                } else {
+                  controller.clear();
+                }
+                setInnerState(() {});
+              },
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                showSelectedItems: true,
+                menuProps: const MenuProps(
+                  backgroundColor: Colors.white,
+                  surfaceTintColor: Colors.white,
+                  elevation: 8,
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+                searchFieldProps: TextFieldProps(
+                  decoration: _fieldDecoration(
+                    hintText: 'Buscar...',
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    color: const Color(0xFF0F172A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                itemBuilder: (context, item, isSelected, isHovered) {
+                  final background = isSelected
+                      ? const Color(0xFFE0E7FF)
+                      : (isHovered ? const Color(0xFFF8FAFC) : Colors.white);
+                  return Container(
+                    color: background,
+                    child: ListTile(
+                      dense: true,
+                      leading: Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        size: 18,
+                        color: isSelected
+                            ? const Color(0xFF3730A3)
+                            : const Color(0xFF64748B),
+                      ),
+                      title: Text(
+                        item['label']?.toString() ?? '',
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: isSelected
+                              ? const Color(0xFF1E1B4B)
+                              : const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              decoratorProps: DropDownDecoratorProps(
+                decoration: _fieldDecoration(isReadOnly: isReadOnly),
+              ),
+            ),
+            if (schema.allowCustomEntries && !isReadOnly) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: addController,
+                      style: GoogleFonts.outfit(
+                        fontSize: 13,
+                        color: _inputTextColor,
+                      ),
+                      decoration: _fieldDecoration(
+                        hintText: 'Nueva categoria...',
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      onSubmitted: (_) => addCustomOption(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: addCustomOption,
+                    icon: const Icon(Icons.add_circle_rounded),
+                    color: _accentColor,
+                    tooltip: 'Agregar categoria',
+                  ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 

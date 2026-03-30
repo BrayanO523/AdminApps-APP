@@ -16,6 +16,8 @@ enum DynamicFormFieldType {
   radioSelect,
   /// Color picker (retorna el color como string hex #RRGGBB).
   colorPicker,
+  /// Editor de mapa clave -> número, útil para precios por tipo.
+  keyValueNumberMap,
 }
 
 /// Metadatos (Esquema) para renderizar un campo específico en `DynamicFormDialog`
@@ -53,6 +55,7 @@ class DynamicFormFieldSchema {
   ///   `'companies/{empresaId}/logo.jpg'`  (edición de empresa)
   ///   `'products/{empresaId}/{timestamp}.jpg'` (producto nuevo)
   final String? storagePath;
+  final bool allowCustomEntries;
 
   const DynamicFormFieldSchema({
     required this.type,
@@ -62,6 +65,7 @@ class DynamicFormFieldSchema {
     this.hintText,
     this.isReadOnly = false,
     this.storagePath,
+    this.allowCustomEntries = false,
   });
 
   /// Retorna las opciones resolviendo el provider si está disponible,
