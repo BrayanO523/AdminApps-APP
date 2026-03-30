@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -9,6 +9,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../app/di/network_provider.dart';
 
 import '../../domain/entities/epd_section.dart';
+import '../../data/services/epd_catalog_excel_service.dart';
+import '../config/epd_collection_form_registry.dart';
+import '../mappers/epd_collection_payload_mapper.dart';
 import '../viewmodels/epd_dashboard_viewmodel.dart';
 import '../widgets/epd_sidebar.dart';
 import '../../../shared/presentation/widgets/dynamic_data_table.dart';
@@ -27,6 +30,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   String? _selectedSearchField;
   static const int _pageSize = 20;
   int _currentPage = 0;
+  bool _isApplyingExpenseTemplates = false;
+  bool _isCatalogImportBusy = false;
 
   Future<String> _uploadImageToStorage(
     List<int> bytes,
@@ -53,7 +58,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         if (url != null && url.isNotEmpty) return url;
       }
 
-      throw Exception('La API no devolvió una URL válida de imagen.');
+      throw Exception('La API no devolvio una URL valida de imagen.');
     } on TimeoutException {
       throw Exception(
         'Timeout subiendo imagen por API. Verifica conectividad y estado del servidor.',
@@ -89,13 +94,698 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     if (k.endsWith('_id') && k.length > 3) return true;
     if (k.toLowerCase().startsWith('id_') && k.length > 3) return true;
     if (k.endsWith('ID') && k.length > 2) return true;
-    // Empieza con 'Id' + mayúscula (IdSucursal, IdUsuario, IdEmpresa...)
+    // Empieza con 'Id' + mayÃƒÆ’Ã‚Âºscula (IdSucursal, IdUsuario, IdEmpresa...)
     if (k.length > 2 &&
         k.startsWith('Id') &&
         k[2] == k[2].toUpperCase() &&
         k[2] != '_')
       return true;
     return false;
+  }
+
+  static const Set<String> _technicalFilterFields = {
+    'createdat',
+    'updatedat',
+    'created_at',
+    'updated_at',
+    'creadoen',
+    'actualizadoen',
+    'sync_status',
+    'syncstatus',
+    'last_update_cloud',
+    'last_updated_cloud',
+    'lastupdatecloud',
+    'last_modified',
+    'creado_offline',
+    'modificado_offline',
+    'creado_por',
+    'modificado_por',
+    'fecha_creacion',
+    'fecha_creacion_registro',
+    'fecha_actualizacion',
+    'items',
+    'combo_items_editor',
+  };
+
+  bool _isSearchableField(String column) {
+    final normalized = column.trim();
+    if (normalized.isEmpty) return false;
+    if (_isRawIdField(normalized)) return false;
+    return !_technicalFilterFields.contains(normalized.toLowerCase());
+  }
+
+  static const Set<String> _mutableSections = {
+    'companies',
+    'branches',
+    'users',
+    'clients',
+    'categories',
+    'products',
+    'combos',
+    'expense_categories',
+    'expense_category_templates',
+    'expenses',
+    'suppliers',
+    'supplier_assignments',
+    'catalog_templates',
+    'category_templates',
+  };
+
+  bool _isCreateDisabled(String sectionId) =>
+      !_mutableSections.contains(sectionId);
+
+  bool _isEditEnabled(String sectionId) => _mutableSections.contains(sectionId);
+
+  Future<void> _withExpenseTemplateApplyLock(
+    Future<void> Function() action,
+  ) async {
+    if (_isApplyingExpenseTemplates || !mounted) return;
+    setState(() => _isApplyingExpenseTemplates = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() => _isApplyingExpenseTemplates = false);
+      }
+    }
+  }
+
+  String? _getSingleSelectedEmpresaId(EpdDashboardState state) {
+    if (state.selectedEmpresas.length != 1) return null;
+    final selected = state.selectedEmpresas.first;
+    for (final key in const ['empresaId', 'IdEmpresa', 'id', 'value']) {
+      final value = selected[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  Future<void> _handleCatalogExcelAction(
+    EpdDashboardState state,
+    String action,
+  ) async {
+    if (_isCatalogImportBusy) return;
+
+    final empresaId = _getSingleSelectedEmpresaId(state);
+    if (empresaId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Debes seleccionar exactamente 1 empresa para usar Catalogo Excel.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCatalogImportBusy = true);
+    try {
+      if (action == 'download_template') {
+        await EpdCatalogExcelService.downloadTemplate();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Plantilla Excel descargada correctamente.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+
+      if (action == 'import_excel') {
+        final excelPayload =
+            await EpdCatalogExcelService.pickAndParseImportFile();
+        if (excelPayload == null) {
+          return;
+        }
+        final dataSource = ref.read(epdDataSourceProvider);
+        final previewResult = await dataSource.previewCatalogImport(
+          empresaId: empresaId,
+          templateVersion: excelPayload.templateVersion,
+          categories: excelPayload.categories,
+          products: excelPayload.products,
+        );
+
+        final previewData = previewResult.fold(
+          (failure) => null,
+          (data) => data,
+        );
+        if (previewData == null) {
+          final error = previewResult.fold(
+            (failure) => failure.message,
+            (_) => '',
+          );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        final previewModel = _CatalogImportPreviewModel.fromMap(previewData);
+        if (!mounted) return;
+
+        final decisions = await _showCatalogImportPreviewDialog(previewModel);
+        if (decisions == null) return;
+
+        final commitResult = await dataSource.commitCatalogImport(
+          empresaId: empresaId,
+          templateVersion: excelPayload.templateVersion,
+          draftToken: previewModel.draftToken,
+          categories: excelPayload.categories,
+          products: excelPayload.products,
+          conflictDecisions: decisions.conflictDecisions,
+          invalidPolicy: decisions.invalidPolicy,
+        );
+
+        final commitData = commitResult.fold((failure) => null, (data) => data);
+        if (commitData == null) {
+          final error = commitResult.fold(
+            (failure) => failure.message,
+            (_) => '',
+          );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        if (!mounted) return;
+        final success = commitData['success'] == true;
+        if (!success) {
+          final message =
+              commitData['message']?.toString() ??
+              'No se guardaron los datos del archivo.';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), backgroundColor: Colors.orange),
+          );
+          return;
+        }
+
+        final createdCounts =
+            (commitData['createdCounts'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+        final updatedCounts =
+            (commitData['updatedCounts'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+        final skippedCounts =
+            (commitData['skippedCounts'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+        final skippedTotal =
+            ((skippedCounts['categories'] ?? 0) as num).toInt() +
+            ((skippedCounts['products'] ?? 0) as num).toInt();
+        final summaryText =
+            'Importacion completada. '
+            'Categorias +${createdCounts['categories'] ?? 0}/~${updatedCounts['categories'] ?? 0}, '
+            'Productos +${createdCounts['products'] ?? 0}/~${updatedCounts['products'] ?? 0}, '
+            'Omitidos $skippedTotal.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(summaryText), backgroundColor: Colors.green),
+        );
+
+        await ref
+            .read(epdDashboardProvider.notifier)
+            .refreshAfterExternalImport();
+      }
+    } on EpdCatalogExcelException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.orange),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error procesando Catalogo Excel: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isCatalogImportBusy = false);
+      }
+    }
+  }
+
+  Future<_CatalogImportDialogResult?> _showCatalogImportPreviewDialog(
+    _CatalogImportPreviewModel preview,
+  ) async {
+    final decisions = <String, String>{};
+    for (final row in preview.conflictRows) {
+      decisions[row.rowKey] = 'keep_existing';
+    }
+    var invalidPolicy = preview.invalidRows.isNotEmpty
+        ? 'abort_all'
+        : 'save_valid_only';
+
+    return showDialog<_CatalogImportDialogResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        final surface = isDark ? const Color(0xFF0F172A) : Colors.white;
+        final surfaceMuted = isDark
+            ? const Color(0xFF111827)
+            : const Color(0xFFF8FAFC);
+        final borderColor = isDark
+            ? const Color(0xFF334155)
+            : const Color(0xFFE2E8F0);
+        final textPrimary = isDark
+            ? const Color(0xFFF8FAFC)
+            : const Color(0xFF0F172A);
+        final textSecondary = isDark
+            ? const Color(0xFFCBD5E1)
+            : const Color(0xFF475569);
+
+        Widget metricCard({
+          required String label,
+          required int value,
+          required Color accent,
+        }) {
+          return Container(
+            constraints: const BoxConstraints(minWidth: 130),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: surfaceMuted,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value.toString(),
+                  style: GoogleFonts.outfit(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (context, setInnerState) {
+            return Dialog(
+              backgroundColor: surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 980,
+                  maxHeight: 760,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFF2563EB,
+                              ).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.table_view_rounded,
+                              color: Color(0xFF2563EB),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Preview de Importacion de Catalogo',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Revisa conflictos y filas invalidas antes de confirmar.',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    color: textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          metricCard(
+                            label: 'Categorias (total)',
+                            value: preview.categoriesSummary.total,
+                            accent: const Color(0xFF3B82F6),
+                          ),
+                          metricCard(
+                            label: 'Categorias nuevas',
+                            value: preview.categoriesSummary.newItems,
+                            accent: const Color(0xFF16A34A),
+                          ),
+                          metricCard(
+                            label: 'Conflictos cat.',
+                            value: preview.categoriesSummary.conflicts,
+                            accent: const Color(0xFFF59E0B),
+                          ),
+                          metricCard(
+                            label: 'Invalidas cat.',
+                            value: preview.categoriesSummary.invalid,
+                            accent: const Color(0xFFDC2626),
+                          ),
+                          metricCard(
+                            label: 'Productos (total)',
+                            value: preview.productsSummary.total,
+                            accent: const Color(0xFF3B82F6),
+                          ),
+                          metricCard(
+                            label: 'Productos nuevos',
+                            value: preview.productsSummary.newItems,
+                            accent: const Color(0xFF16A34A),
+                          ),
+                          metricCard(
+                            label: 'Conflictos prod.',
+                            value: preview.productsSummary.conflicts,
+                            accent: const Color(0xFFF59E0B),
+                          ),
+                          metricCard(
+                            label: 'Invalidos prod.',
+                            value: preview.productsSummary.invalid,
+                            accent: const Color(0xFFDC2626),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: surfaceMuted,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: borderColor),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (preview.conflictRows.isNotEmpty) ...[
+                                  Text(
+                                    'Conflictos detectados',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...preview.conflictRows.map((row) {
+                                    final currentDecision =
+                                        decisions[row.rowKey] ??
+                                        'keep_existing';
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFF59E0B,
+                                        ).withValues(alpha: 0.10),
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFFF59E0B,
+                                          ).withValues(alpha: 0.35),
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              '[${row.sheetLabel}] fila ${row.rowNumber} - ${row.displayName}',
+                                              style: GoogleFonts.outfit(
+                                                fontSize: 12,
+                                                color: textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          DropdownButton<String>(
+                                            value: currentDecision,
+                                            dropdownColor: surface,
+                                            onChanged: (value) {
+                                              if (value == null) return;
+                                              setInnerState(() {
+                                                decisions[row.rowKey] = value;
+                                              });
+                                            },
+                                            items: [
+                                              DropdownMenuItem(
+                                                value: 'keep_existing',
+                                                child: Text(
+                                                  'Conservar existente',
+                                                  style: GoogleFonts.outfit(
+                                                    color: textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'overwrite',
+                                                child: Text(
+                                                  'Sobrescribir',
+                                                  style: GoogleFonts.outfit(
+                                                    color: textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                  const SizedBox(height: 12),
+                                ] else ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFF16A34A,
+                                      ).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF16A34A,
+                                        ).withValues(alpha: 0.30),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'No hay conflictos detectados.',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        color: textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (preview.invalidRows.isNotEmpty) ...[
+                                  Text(
+                                    'Filas invalidas',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...preview.invalidRows.map((row) {
+                                    final errors = row.errors.join(' | ');
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFDC2626,
+                                        ).withValues(alpha: 0.10),
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFFDC2626,
+                                          ).withValues(alpha: 0.35),
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '[${row.sheetLabel}] fila ${row.rowNumber} - ${row.displayName}\n$errors',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 12,
+                                          color: textPrimary,
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Politica para filas invalidas:',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  RadioListTile<String>(
+                                    value: 'save_valid_only',
+                                    groupValue: invalidPolicy,
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFF2563EB),
+                                    title: Text(
+                                      'Guardar solo filas validas',
+                                      style: GoogleFonts.outfit(
+                                        color: textPrimary,
+                                      ),
+                                    ),
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setInnerState(
+                                        () => invalidPolicy = value,
+                                      );
+                                    },
+                                  ),
+                                  RadioListTile<String>(
+                                    value: 'abort_all',
+                                    groupValue: invalidPolicy,
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFF2563EB),
+                                    title: Text(
+                                      'No guardar nada',
+                                      style: GoogleFonts.outfit(
+                                        color: textPrimary,
+                                      ),
+                                    ),
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setInnerState(
+                                        () => invalidPolicy = value,
+                                      );
+                                    },
+                                  ),
+                                ] else ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFF16A34A,
+                                      ).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF16A34A,
+                                        ).withValues(alpha: 0.30),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'No hay filas invalidas. Se puede confirmar la importacion.',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        color: textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              'Cancelar',
+                              style: GoogleFonts.outfit(
+                                color: textSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(
+                                context,
+                                _CatalogImportDialogResult(
+                                  conflictDecisions: decisions,
+                                  invalidPolicy: invalidPolicy,
+                                ),
+                              );
+                            },
+                            child: Text(
+                              'Confirmar Importacion',
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _clearFilters() {
@@ -233,15 +923,42 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                                       );
                                     }
                                   : null,
-                              // Botón extra para ajuste atómico de stock
+                              // BotÃƒÆ’Ã‚Â³n extra para ajuste atÃƒÆ’Ã‚Â³mico de stock
                               onExtraAction: state.activeSection == 'inventory'
-                                  ? (row) => _showInventoryAdjustDialog(row)
+                                  ? (row) {
+                                      unawaited(
+                                        _showInventoryAdjustDialog(row),
+                                      );
+                                    }
+                                  : state.activeSection ==
+                                        'expense_category_templates'
+                                  ? (row) {
+                                      unawaited(
+                                        _showApplyExpenseTemplateDialog(
+                                          state,
+                                          row,
+                                        ),
+                                      );
+                                    }
                                   : null,
-                              extraActionIcon: Icons.swap_vert_circle_rounded,
-                              extraActionColor: const Color(0xFF059669),
-                              extraActionTooltip: 'Ajustar Stock',
-                              onEdit: (row) => _showEditDialog(row),
-                              onDelete: (row) => _showDeleteDialog(row),
+                              extraActionIcon:
+                                  state.activeSection == 'inventory'
+                                  ? Icons.swap_vert_circle_rounded
+                                  : Icons.publish_rounded,
+                              extraActionColor:
+                                  state.activeSection == 'inventory'
+                                  ? const Color(0xFF059669)
+                                  : const Color(0xFF7C3AED),
+                              extraActionTooltip:
+                                  state.activeSection == 'inventory'
+                                  ? 'Ajustar Stock'
+                                  : 'Aplicar a Empresa',
+                              onEdit: _isEditEnabled(state.activeSection)
+                                  ? (row) => _showEditDialog(row)
+                                  : null,
+                              onDelete: _isEditEnabled(state.activeSection)
+                                  ? (row) => _showDeleteDialog(row)
+                                  : null,
                               onFilterToggle: (column, rawValue) {
                                 ref
                                     .read(epdDashboardProvider.notifier)
@@ -308,6 +1025,18 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       (s) => s.id == state.activeSection,
       orElse: () => epdSections.first,
     );
+    final isExpenseTemplateSection =
+        state.activeSection == 'expense_category_templates';
+    final canApplyExpenseTemplates =
+        isExpenseTemplateSection &&
+        !state.isLoading &&
+        !_isApplyingExpenseTemplates;
+    final canCreate =
+        !_isCreateDisabled(state.activeSection) && !state.isLoading;
+    final canUseCatalogExcel =
+        !state.isLoading &&
+        !_isCatalogImportBusy &&
+        _getSingleSelectedEmpresaId(state) != null;
     final content = Row(
       children: [
         if (isMobile)
@@ -421,7 +1150,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             ),
           ),
         if (!isMobile) const Spacer(),
-        // Búsqueda textual - solo desktop
+        // BÃƒÆ’Ã‚Âºsqueda textual - solo desktop
         if (!isMobile && (state.data.isNotEmpty || state.searchField != null))
           Container(
             height: 36,
@@ -493,25 +1222,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                         for (final row in state.data) {
                           cols.addAll(row.keys);
                         }
-                        final list = cols
-                            .where((col) => !_isRawIdField(col))
-                            .toList();
-                        list.removeWhere(
-                          (col) => [
-                            'createdAt',
-                            'updatedAt',
-                            'created_at',
-                            'updated_at',
-                            'creadoEn',
-                            'actualizadoEn',
-                            'sync_status',
-                            'last_update_cloud',
-                            'lastUpdateCloud',
-                            'creado_offline',
-                            'creado_por',
-                            'fecha_creacion',
-                          ].contains(col),
-                        );
+                        final list = cols.where(_isSearchableField).toList();
                         list.sort((a, b) {
                           final aLower = a.toLowerCase();
                           final bLower = b.toLowerCase();
@@ -572,16 +1283,122 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
               .selectSection(state.activeSection);
         }),
         const SizedBox(width: 12),
+        PopupMenuButton<String>(
+          enabled: canUseCatalogExcel,
+          onSelected: (value) {
+            unawaited(_handleCatalogExcelAction(state, value));
+          },
+          tooltip: canUseCatalogExcel
+              ? 'Catalogo Excel'
+              : 'Selecciona 1 empresa para habilitar Catalogo Excel',
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'download_template',
+              child: Text('Descargar plantilla'),
+            ),
+            PopupMenuItem(value: 'import_excel', child: Text('Importar Excel')),
+          ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: canUseCatalogExcel
+                  ? Colors.white
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: canUseCatalogExcel
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isCatalogImportBusy)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Icon(
+                    Icons.table_view_rounded,
+                    size: 16,
+                    color: canUseCatalogExcel
+                        ? const Color(0xFF334155)
+                        : const Color(0xFF94A3B8),
+                  ),
+                const SizedBox(width: 8),
+                Text(
+                  isMobile ? 'Excel' : 'Catalogo Excel',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: canUseCatalogExcel
+                        ? const Color(0xFF334155)
+                        : const Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: canUseCatalogExcel
+                      ? const Color(0xFF334155)
+                      : const Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        if (isMobile)
+          if (isExpenseTemplateSection)
+            IconButton(
+              onPressed: canApplyExpenseTemplates
+                  ? () {
+                      unawaited(_showApplyAllExpenseTemplatesDialog(state));
+                    }
+                  : null,
+              icon: const Icon(Icons.publish_rounded, size: 24),
+              color: const Color(0xFF7C3AED),
+              tooltip: 'Aplicar todas las plantillas',
+            ),
         if (isMobile)
           IconButton(
-            onPressed: state.isLoading ? null : () => _showCreateDialog(state),
+            onPressed: canCreate ? () => _showCreateDialog(state) : null,
             icon: const Icon(Icons.add_circle_rounded, size: 28),
             color: const Color(0xFF8B5CF6),
-            tooltip: 'Crear Documento',
+            tooltip: canCreate
+                ? 'Crear Documento'
+                : 'Creacion deshabilitada para esta seccion',
           )
-        else
+        else if (isExpenseTemplateSection) ...[
+          OutlinedButton.icon(
+            onPressed: canApplyExpenseTemplates
+                ? () {
+                    unawaited(_showApplyAllExpenseTemplatesDialog(state));
+                  }
+                : null,
+            icon: const Icon(Icons.publish_rounded, size: 16),
+            label: Text(
+              'Aplicar Plantillas',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF7C3AED),
+              side: const BorderSide(color: Color(0xFF7C3AED)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        if (!isMobile)
           ElevatedButton.icon(
-            onPressed: state.isLoading ? null : () => _showCreateDialog(state),
+            onPressed: canCreate ? () => _showCreateDialog(state) : null,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(
               'Crear Documento',
@@ -623,25 +1440,8 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     for (final row in state.data) {
       columnas.addAll(row.keys);
     }
-    // Excluir campos de ID y técnicos del filtro visible al usuario
-    final listaColumnas = columnas.where((col) => !_isRawIdField(col)).toList()
-      ..sort();
-    listaColumnas.removeWhere(
-      (col) => [
-        'createdAt',
-        'updatedAt',
-        'created_at',
-        'updated_at',
-        'creadoEn',
-        'actualizadoEn',
-        'sync_status',
-        'last_update_cloud',
-        'lastUpdateCloud',
-        'creado_offline',
-        'creado_por',
-        'fecha_creacion',
-      ].contains(col),
-    );
+    // Excluir campos de ID y tÃƒÆ’Ã‚Â©cnicos del filtro visible al usuario
+    final listaColumnas = columnas.where(_isSearchableField).toList()..sort();
 
     final activeField = state.searchField;
     final activeValue = state.searchValue;
@@ -815,432 +1615,17 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
   Map<String, DynamicFormFieldSchema> _buildFieldSchemas(
     EpdDashboardState state,
-  ) {
-    switch (state.activeSection) {
-      // -- Sucursales --
-      case 'branches':
-        return {
-          'assigned_seller_ids': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('users'),
-            label: 'Vendedores Asignados',
-          ),
-          'allowed_categories': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('categories'),
-            label: 'Categorías Permitidas',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
+  ) => EpdCollectionFormRegistry.buildFieldSchemas(
+    sectionId: state.activeSection,
+    state: state,
+  );
 
-      // -- Usuarios --
-      case 'users':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa Activa',
-          ),
-          'rol': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': 'VENDEDOR', 'label': 'Vendedor'},
-              {'value': 'ADMIN', 'label': 'Administrador'},
-            ],
-            label: 'Rol',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
+  List<String> _hiddenSystemFieldsForSection(String sectionId) =>
+      EpdCollectionFormRegistry.hiddenSystemFieldsForSection(sectionId);
 
-      // -- Categorías --
-      case 'categories':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'Color': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.colorPicker,
-            label: 'Color de Categoría',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Productos --
-      case 'products':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'IdCategoria': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('categories'),
-            label: 'Categoría',
-          ),
-          'fotoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Foto del Producto',
-            storagePath: 'products/{empresaId}/{id}/{timestamp}.jpg',
-          ),
-          'ModoVventa': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': 'UNIDAD', 'label': 'Por Unidad'},
-              {'value': 'LB', 'label': 'Por Libra'},
-              {'value': 'AMBOS', 'label': 'Ambos'},
-            ],
-            label: 'Modo de Venta',
-            isReadOnly: true,
-          ),
-          'is_promo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '0', 'label': 'No es Promoción'},
-              {'value': '1', 'label': 'Sí es Promoción'},
-            ],
-            label: '¿En Promoción?',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Combos --
-      case 'combos':
-        return {
-          'nombre': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Nombre del Combo',
-          ),
-          'precioCombo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Precio del Combo',
-          ),
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'productos_combo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('products'),
-            label: 'Productos del Combo',
-          ),
-          'sucursales_asignadas': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.multiselectDropdown,
-            optionsResolver: () => state.getDropdownOptions('branches'),
-            label: 'Sucursales Disponibles',
-          ),
-          'fotoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Foto del Combo',
-            storagePath: 'combos/{empresaId}/{id}/{timestamp}.jpg',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Clientes --
-      case 'clients':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Proveedores --
-      case 'suppliers':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            optionsResolver: () => state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'esGlobal': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '0', 'label': 'Proveedor Local'},
-              {'value': '1', 'label': 'Proveedor Global'},
-            ],
-            label: '¿Alcance del Proveedor?',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Asignaciones de Proveedores --
-      case 'supplier_assignments':
-        return {
-          'empresaId': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('companies'),
-            label: 'Empresa',
-          ),
-          'IdSucursal': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.dropdown,
-            options: state.getDropdownOptions('branches'),
-            label: 'Sucursal',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-
-      // -- Empresas ---------------------------------------------------------
-      case 'companies':
-        return {
-          'logoUrl': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.imageUpload,
-            label: 'Logo de la Empresa',
-            storagePath: 'companies/{id}/{timestamp}.jpg',
-          ),
-          'activo': DynamicFormFieldSchema(
-            type: DynamicFormFieldType.radioSelect,
-            options: const [
-              {'value': '1', 'label': 'Activo'},
-              {'value': '0', 'label': 'Inactivo'},
-            ],
-            label: 'Estado',
-          ),
-        };
-      default:
-        return {};
-    }
-  } // fin de _buildFieldSchemas
-
-  // -- Lista global de campos de sistema que el admin NUNCA debe ver ni tocar --
-  static const _hiddenSystemFields = [
-    // SQLite offline-only
-    'creado_offline', 'modificado_offline', 'SYNC_STATUS',
-    // Timestamps gestionados por el backend
-    'last_modified', 'last_updated_cloud', 'fechacreacion',
-    'fecha_creacion_registro',
-    // Auditoría interna
-    'creado_por', 'modificado_por', 'idusuario', 'Idvendedor',
-    'seller_id',
-    // Banderas y contadores internos del motor móvil
-    'estado', 'Favorito', 'OrdenFavorito',
-    'contador_ventas', 'isTemplate', 'source_template_id',
-    'sync_status', 'control_inventario', 'clientes_enabled',
-    'pesos_rapidos_enabled', 'adminId',
-    // IDs canónicos autogenerados por el backend al crear
-    'IdProducto', 'IdCombo', 'IdInventario',
-    'IdTransaccion', 'IdVenta', 'IdCliente', 'IdUsuario',
-    // Autogenerados (no debe llenar el admin)
-    'CodigoSucursal',
-    // Campos de usuario que no aplican en el formulario
-    'selected_categories',
-    'IdSucursalesAsignadas',
-    'IdSucursal',
-    'items',
-  ];
-
-  /// Devuelve los campos base requeridos por cada colección, para que el formulario
-  /// de creación funcione aunque la tabla esté completamente vacía.
-  Map<String, dynamic> _getBaseFieldsForSection(String section) {
-    switch (section) {
-      // -- Empresas --
-      case 'companies':
-        return {
-          'nombreComercial': '',
-          'razonSocial': '',
-          'rtn': '',
-          'telefono': '',
-          'correo': '',
-          'logoUrl': '',
-          'direccion': '',
-          'adminId': '',
-          'activo': 1,
-        };
-
-      // -- Sucursales (CódigoSucursal autogenerado por backend) --
-      case 'branches':
-        return {
-          'Nombre': '',
-          'direccion_referencia': '',
-          'telefono_contacto': '',
-          'empresaId': '',
-          'adminId': '',
-          'assigned_seller_ids': <String>[],
-          'allowed_categories': <String>[],
-          'control_inventario': 1,
-          'clientes_enabled': 1,
-          'pesos_rapidos_enabled': 0,
-          'sync_status': 1,
-          'activo': 1,
-        };
-
-      // -- Usuarios --
-      case 'users':
-        return {
-          'NombreCompleto': '',
-          'CodigoUsuario': '',
-          'pin': '',
-          'rol': 'VENDEDOR',
-          'empresaId': '',
-          // IdSucursal y selected_categories están en _hiddenSystemFields;
-          // el backend rellena IdSucursal desde IdSucursalesAsignadas[0].
-          'IdSucursal': '',
-          'IdSucursalesAsignadas': '[]',
-          'selected_categories': '[]',
-          'activo': 1,
-        };
-
-      // -- Clientes --
-      case 'clients':
-        return {
-          'NombreCompleto': '',
-          'RTN': '',
-          'Movil': '',
-          'telefono': '',
-          'correo': '',
-          'direccion': '',
-          'empresaId': '',
-          'adminId': '',
-          'activo': 1,
-          'sync_status': 1,
-        };
-
-      // -- Categorías --
-      case 'categories':
-        return {
-          'NombreCategoria': '',
-          'descripcion': '',
-          'Color': '0xFF3498DB',
-          'empresaId': '',
-          'activo': 1,
-        };
-
-      // -- Productos --
-      case 'products':
-        return {
-          'NombreProducto': '',
-          'descripcion': '',
-          'fotoUrl': '',
-          'preciounidad': 0.0,
-          'precioLibra': 0.0,
-          'ModoVventa': 'UNIDAD',
-          'is_promo': 0,
-          'promo_price': 0.0,
-          'promo_price_lb': 0.0,
-          'costo': 0.0,
-          'IdCategoria': '',
-          'empresaId': '',
-          // Campos del motor móvil (ocultos, valores por defecto)
-          'Favorito': 0,
-          'OrdenFavorito': 0,
-          'contador_ventas': 0,
-          'Activo': 1,
-          'sync_status': 1,
-        };
-
-      // -- Combos --
-      case 'combos':
-        return {
-          'nombre': '',
-          'descripcion': '',
-          'precioCombo': 0.0,
-          'fotoUrl': '',
-          'productos_combo': <String>[],
-          'sucursales_asignadas': '[]',
-          'empresaId': '',
-          'activo': 1,
-          'sync_status': 1,
-        };
-
-      // -- Proveedores --
-      case 'suppliers':
-        return {
-          'nombre': '',
-          'telefono': '',
-          'email': '',
-          'direccion': '',
-          'notas': '',
-          'empresaId': '',
-          'esGlobal': 0,
-          'activo': 1,
-        };
-
-      // -- Asignaciones de Proveedores --
-      case 'supplier_assignments':
-        return {
-          'IdProveedor': '',
-          'IdSucursal': '',
-          'motivo': '',
-          'empresaId': '',
-          'activo': 1,
-        };
-
-      // Inventario, ventas, mermas, traslados -> solo lectura
-      case 'inventory':
-      case 'inventory_transactions':
-      case 'inventory_transfers':
-      case 'sales':
-      case 'waste_reports':
-      case 'catalog_templates':
-      case 'category_templates':
-        return {}; // Sin formulario de creación
-
-      default:
-        return {};
-    }
-  }
+  /// Devuelve los campos base requeridos por cada coleccion para formularios de creacion.
+  Map<String, dynamic> _getBaseFieldsForSection(String section) =>
+      EpdCollectionFormRegistry.baseFields(section);
 
   List<String> _parseStringList(dynamic rawValue) {
     final result = <String>[];
@@ -1425,7 +1810,11 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     Map<String, dynamic> result, {
     Map<String, dynamic>? existingRow,
   }) {
-    final payload = Map<String, dynamic>.from(result);
+    final payload = EpdCollectionPayloadMapper.fromFormToApi(
+      sectionId: state.activeSection,
+      state: state,
+      formData: result,
+    );
 
     if (state.activeSection == 'branches') {
       // Solo para UI de sucursales; no debe persistirse en el documento branch.
@@ -1437,7 +1826,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
 
     if (state.activeSection != 'combos') return payload;
 
-    // Normalizar alias legacy -> esquema canónico de combos usado por la app móvil.
+    // Normalizar alias legacy -> esquema canÃƒÆ’Ã‚Â³nico de combos usado por la app mÃƒÆ’Ã‚Â³vil.
     final comboName = (payload['nombre'] ?? payload['NombreCombo'])
         ?.toString()
         .trim();
@@ -1456,18 +1845,81 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
     payload.remove('precio');
 
-    final selectedProductIds = _parseStringList(
-      payload.remove('productos_combo'),
-    );
+    final editedItems = _parseMapList(payload.remove('combo_items_editor'));
+    final selectedProductIds = editedItems.isNotEmpty
+        ? _extractComboProductIds(editedItems)
+        : _parseStringList(payload.remove('productos_combo'));
     final existingItems = _parseMapList(existingRow?['items']);
     final comboId =
-        existingRow?['id']?.toString() ?? payload['id']?.toString() ?? '';
+        existingRow?['idCombo']?.toString() ??
+        existingRow?['IdCombo']?.toString() ??
+        payload['idCombo']?.toString() ??
+        payload['IdCombo']?.toString() ??
+        existingRow?['id']?.toString() ??
+        payload['id']?.toString() ??
+        '';
 
-    payload['items'] = _buildComboItemsPayload(
-      productIds: selectedProductIds,
-      comboId: comboId,
-      existingItems: existingItems,
-    );
+    if (editedItems.isNotEmpty) {
+      final existingByProduct = <String, Map<String, dynamic>>{};
+      for (final item in existingItems) {
+        final productId = (item['productoId'] ?? item['productId'] ?? '')
+            .toString()
+            .trim();
+        if (productId.isNotEmpty && !existingByProduct.containsKey(productId)) {
+          existingByProduct[productId] = item;
+        }
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      payload['items'] = List<Map<String, dynamic>>.generate(
+        editedItems.length,
+        (index) {
+          final edited = editedItems[index];
+          final productId = (edited['productoId'] ?? edited['productId'] ?? '')
+              .toString()
+              .trim();
+          final existing = existingByProduct[productId];
+
+          final idComboItem =
+              (edited['idComboItem'] ?? existing?['idComboItem'] ?? '')
+                  .toString()
+                  .trim();
+          final itemComboId = (edited['comboId'] ?? existing?['comboId'] ?? '')
+              .toString()
+              .trim();
+          final itemVariantId =
+              (edited['variantId'] ?? existing?['variantId'] ?? '').toString();
+          final itemTipoUnidad =
+              (edited['tipounidad'] ??
+                      edited['tipoUnidad'] ??
+                      existing?['tipounidad'] ??
+                      '')
+                  .toString()
+                  .trim();
+          final cantidadRaw = edited['cantidad'] ?? edited['quantity'];
+          final cantidad = cantidadRaw is num
+              ? cantidadRaw
+              : num.tryParse(cantidadRaw?.toString() ?? '') ?? 1;
+
+          return {
+            'idComboItem': idComboItem.isNotEmpty
+                ? idComboItem
+                : 'combo_item_${timestamp}_$index',
+            'comboId': comboId.isNotEmpty ? comboId : itemComboId,
+            'productoId': productId,
+            'variantId': itemVariantId,
+            'cantidad': cantidad,
+            'tipounidad': itemTipoUnidad.isNotEmpty ? itemTipoUnidad : 'UNIDAD',
+          };
+        },
+      );
+    } else {
+      payload['items'] = _buildComboItemsPayload(
+        productIds: selectedProductIds,
+        comboId: comboId,
+        existingItems: existingItems,
+      );
+    }
 
     return payload;
   }
@@ -1476,8 +1928,13 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     EpdDashboardState state,
     Map<String, dynamic> row,
   ) {
+    final mappedInitial = EpdCollectionPayloadMapper.fromApiToForm(
+      sectionId: state.activeSection,
+      row: row,
+    );
+
     if (state.activeSection == 'branches') {
-      final initialData = Map<String, dynamic>.from(row);
+      final initialData = Map<String, dynamic>.from(mappedInitial);
       initialData['assigned_seller_ids'] = _getAssignedSellerIdsForBranch(
         state,
         row,
@@ -1486,10 +1943,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
 
     if (state.activeSection != 'combos') {
-      return Map<String, dynamic>.from(row);
+      return Map<String, dynamic>.from(mappedInitial);
     }
 
-    final initialData = Map<String, dynamic>.from(row);
+    final initialData = Map<String, dynamic>.from(mappedInitial);
     if ((initialData['nombre'] == null || initialData['nombre'] == '') &&
         initialData['NombreCombo'] != null) {
       initialData['nombre'] = initialData['NombreCombo'];
@@ -1500,12 +1957,91 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     initialData.remove('NombreCombo');
     initialData.remove('precio');
     initialData['productos_combo'] = _extractComboProductIds(row['items']);
+    initialData['combo_items_editor'] = _parseMapList(row['items']);
     return initialData;
   }
 
+  Map<String, dynamic> _buildUnifiedFormData({
+    required EpdDashboardState state,
+    required Map<String, dynamic> sourceData,
+    required List<String> hiddenFields,
+  }) {
+    final order = EpdCollectionFormRegistry.formFieldOrder(state.activeSection);
+    if (order.isEmpty) {
+      return Map<String, dynamic>.from(sourceData);
+    }
+
+    final hiddenSet = <String>{...hiddenFields, 'id'};
+    final prepared = <String, dynamic>{};
+
+    for (final key in order) {
+      if (sourceData.containsKey(key)) {
+        prepared[key] = sourceData[key];
+      }
+    }
+
+    for (final key in hiddenSet) {
+      if (sourceData.containsKey(key) && !prepared.containsKey(key)) {
+        prepared[key] = sourceData[key];
+      }
+    }
+
+    // Preserve row/document identifiers and context keys for correct payload mapping.
+    for (final key in const ['id', 'empresaId', 'adminId']) {
+      if (sourceData.containsKey(key) && !prepared.containsKey(key)) {
+        prepared[key] = sourceData[key];
+      }
+    }
+
+    return prepared;
+  }
+
+  Future<Map<String, dynamic>?> _showSectionFormDialog({
+    required EpdDashboardState state,
+    required Map<String, dynamic> initialData,
+    required bool isEdit,
+    required String title,
+    required List<String> hiddenFields,
+  }) {
+    final preparedInitialData = _buildUnifiedFormData(
+      state: state,
+      sourceData: initialData,
+      hiddenFields: hiddenFields,
+    );
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      builder: (_) => DynamicFormDialog(
+        initialData: preparedInitialData,
+        isEdit: isEdit,
+        title: title,
+        fieldSchemas: _buildFieldSchemas(state),
+        hiddenFields: hiddenFields,
+        onUploadImage: _uploadImageToStorage,
+      ),
+    );
+  }
+
   Future<void> _showCreateDialog(EpdDashboardState state) async {
-    if (state.activeSection == 'branches' &&
-        state.selectedEmpresas.length != 1) {
+    var currentState = state;
+
+    if (_isCreateDisabled(currentState.activeSection)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La creacion esta deshabilitada para esta seccion.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    await ref.read(epdDashboardProvider.notifier).refreshDependencies();
+    if (!mounted) return;
+    currentState = ref.read(epdDashboardProvider);
+
+    if (currentState.activeSection == 'branches' &&
+        currentState.selectedEmpresas.length != 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -1517,17 +2053,24 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       return;
     }
 
-    // Plantilla base por sección (robusta, no depende de state.data.first)
-    final initialData = _getBaseFieldsForSection(state.activeSection);
+    // Plantilla base por secciÃƒÆ’Ã‚Â³n (robusta, no depende de state.data.first)
+    final initialData = _getBaseFieldsForSection(currentState.activeSection);
 
-    // Inyectar automáticamente el contexto activo (empresa seleccionada, filtros de búsqueda)
+    // Inyectar automÃƒÆ’Ã‚Â¡ticamente el contexto activo (empresa seleccionada, filtros de bÃƒÆ’Ã‚Âºsqueda)
     final contextHidden = <String>[];
+    final isGlobalTemplateSection =
+        currentState.activeSection == 'expense_category_templates' ||
+        currentState.activeSection == 'category_templates' ||
+        currentState.activeSection == 'catalog_templates';
 
     // Si hay una sola empresa seleccionada, se inyecta como empresaId
-    if (state.selectedEmpresas.length == 1) {
+    if (!isGlobalTemplateSection && currentState.selectedEmpresas.length == 1) {
+      final selected = currentState.selectedEmpresas.first;
       final empresaId =
-          state.selectedEmpresas.first['value']?.toString() ??
-          state.selectedEmpresas.first['id']?.toString() ??
+          selected['value']?.toString() ??
+          selected['id']?.toString() ??
+          selected['IdEmpresa']?.toString() ??
+          selected['empresaId']?.toString() ??
           '';
       if (empresaId.isNotEmpty) {
         initialData['empresaId'] = empresaId;
@@ -1535,40 +2078,36 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       }
     }
 
-    // Si hay un filtro de búsqueda activo, también se inyecta y oculta
-    if (state.searchField != null &&
-        state.searchValue != null &&
-        state.searchValue!.isNotEmpty) {
-      initialData[state.searchField!] = state.searchValue!;
-      contextHidden.add(state.searchField!);
+    // Si hay un filtro de bÃƒÆ’Ã‚Âºsqueda activo, tambiÃƒÆ’Ã‚Â©n se inyecta y oculta
+    if (!isGlobalTemplateSection &&
+        currentState.searchField != null &&
+        currentState.searchValue != null &&
+        currentState.searchValue!.isNotEmpty) {
+      initialData[currentState.searchField!] = currentState.searchValue!;
+      contextHidden.add(currentState.searchField!);
     }
 
     // Lista combinada de ocultos: sistema + contexto ya inyectado.
     final hiddenFields = [
-      ..._hiddenSystemFields,
-      if (state.activeSection == 'branches') 'empresaId',
+      ..._hiddenSystemFieldsForSection(currentState.activeSection),
+      if (currentState.activeSection == 'branches') 'empresaId',
       ...contextHidden,
     ];
 
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      builder: (_) => DynamicFormDialog(
-        initialData: initialData,
-        isEdit: false,
-        title: 'Crear en ${state.activeSectionLabel}',
-        fieldSchemas: _buildFieldSchemas(state),
-        hiddenFields: hiddenFields,
-        onUploadImage: _uploadImageToStorage,
-      ),
+    final result = await _showSectionFormDialog(
+      state: currentState,
+      initialData: initialData,
+      isEdit: false,
+      title: 'Crear en ${currentState.activeSectionLabel}',
+      hiddenFields: hiddenFields,
     );
 
     if (result != null && mounted) {
       final notifier = ref.read(epdDashboardProvider.notifier);
-      final payload = _normalizePayloadForSubmit(state, result);
+      final payload = _normalizePayloadForSubmit(currentState, result);
       String? error;
 
-      if (state.activeSection == 'branches') {
+      if (currentState.activeSection == 'branches') {
         final selectedSellerIds = _parseStringList(
           result['assigned_seller_ids'],
         );
@@ -1586,7 +2125,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
             error = syncError;
           } else {
             error =
-                'La sucursal se creó, pero no se obtuvo el ID para asignar vendedores.';
+                'La sucursal se creo, pero no se obtuvo el ID para asignar vendedores.';
           }
         }
       } else {
@@ -1601,7 +2140,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Documento creado con éxito'),
+              content: Text('Documento creado con exito'),
               backgroundColor: Colors.green,
             ),
           );
@@ -1611,23 +2150,22 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   }
 
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
+    final notifier = ref.read(epdDashboardProvider.notifier);
+    await notifier.refreshDependencies();
+    if (!mounted) return;
+
     final state = ref.read(epdDashboardProvider);
     final initialData = _buildDialogInitialData(state, row);
     final hiddenFields = [
-      ..._hiddenSystemFields,
+      ..._hiddenSystemFieldsForSection(state.activeSection),
       if (state.activeSection == 'branches') 'empresaId',
     ];
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      builder: (_) => DynamicFormDialog(
-        initialData: initialData,
-        isEdit: true,
-        title: 'Editar Documento',
-        fieldSchemas: _buildFieldSchemas(state),
-        hiddenFields: hiddenFields,
-        onUploadImage: _uploadImageToStorage,
-      ),
+    final result = await _showSectionFormDialog(
+      state: state,
+      initialData: initialData,
+      isEdit: true,
+      title: 'Editar Documento',
+      hiddenFields: hiddenFields,
     );
 
     if (result != null && mounted) {
@@ -1639,7 +2177,6 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         return;
       }
 
-      final notifier = ref.read(epdDashboardProvider.notifier);
       final payload = _normalizePayloadForSubmit(
         state,
         result,
@@ -1685,11 +2222,11 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         title: Text(
-          '¿Eliminar documento?',
+          'Eliminar documento?',
           style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'Esta acción es irreversible. ¿Seguro que deseas eliminar el registro permanentemente?',
+          'Esta accion es irreversible. Seguro que deseas eliminar el registro permanentemente?',
           style: GoogleFonts.outfit(),
         ),
         actions: [
@@ -1737,10 +2274,282 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
     }
   }
 
-  /// Diálogo para ajuste atómico de stock de inventario.
+  /// DiÃƒÆ’Ã‚Â¡logo para ajuste atÃƒÆ’Ã‚Â³mico de stock de inventario.
   /// Llama al endpoint POST /inventario-ajuste que en un Batch:
   ///   1) Actualiza el campo `stock` del documento en `inventory`
-  ///   2) Crea un registro de auditoría en `inventory_transactions`
+  ///   2) Crea un registro de auditorÃƒÆ’Ã‚Â­a en `inventory_transactions`
+  Future<({String empresaId, String empresaLabel})?>
+  _pickEmpresaForExpenseTemplateApply(
+    EpdDashboardState state, {
+    required String title,
+    required String subtitle,
+  }) async {
+    final companyOptions = state.getDropdownOptions('companies');
+    if (companyOptions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay empresas disponibles para aplicar la plantilla.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return null;
+    }
+
+    String? preselectedEmpresaId;
+    if (state.selectedEmpresas.length == 1) {
+      final selected = state.selectedEmpresas.first;
+      preselectedEmpresaId =
+          selected['id']?.toString().trim().isNotEmpty == true
+          ? selected['id']?.toString().trim()
+          : selected['value']?.toString().trim();
+    }
+    preselectedEmpresaId ??=
+        companyOptions.first['value']?.toString().trim().isNotEmpty == true
+        ? companyOptions.first['value'].toString().trim()
+        : null;
+
+    final formKey = GlobalKey<FormState>();
+    String? selectedEmpresaId = preselectedEmpresaId;
+
+    final pickedEmpresaId = await showDialog<String>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setInner) => Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            width: 480,
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  DropdownButtonFormField<String>(
+                    value: selectedEmpresaId,
+                    items: companyOptions
+                        .map(
+                          (option) => DropdownMenuItem<String>(
+                            value: option['value']?.toString(),
+                            child: Text(
+                              option['label']?.toString() ??
+                                  option['value']?.toString() ??
+                                  '',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setInner(() => selectedEmpresaId = value),
+                    decoration: InputDecoration(
+                      labelText: 'Empresa destino',
+                      labelStyle: GoogleFonts.outfit(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    validator: (value) {
+                      final trimmed = value?.trim() ?? '';
+                      if (trimmed.isEmpty) return 'Selecciona una empresa';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'Cancelar',
+                          style: GoogleFonts.outfit(
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          if (!(formKey.currentState?.validate() ?? false)) {
+                            return;
+                          }
+                          Navigator.pop(ctx, selectedEmpresaId?.trim());
+                        },
+                        icon: const Icon(Icons.publish_rounded, size: 16),
+                        label: Text(
+                          'Aplicar',
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final empresaId = pickedEmpresaId?.trim() ?? '';
+    if (empresaId.isEmpty) return null;
+
+    String companyLabel = empresaId;
+    for (final option in companyOptions) {
+      final optionValue = option['value']?.toString() ?? '';
+      if (optionValue == empresaId) {
+        companyLabel = option['label']?.toString() ?? empresaId;
+        break;
+      }
+    }
+
+    return (empresaId: empresaId, empresaLabel: companyLabel);
+  }
+
+  Future<void> _showApplyAllExpenseTemplatesDialog(
+    EpdDashboardState state,
+  ) async {
+    try {
+      await _withExpenseTemplateApplyLock(() async {
+        final picked = await _pickEmpresaForExpenseTemplateApply(
+          state,
+          title: 'Aplicar Todas las Plantillas',
+          subtitle:
+              'Se aplicarán todos los tipos de gasto plantilla a la empresa seleccionada.',
+        );
+        if (picked == null || !mounted) return;
+
+        final error = await ref
+            .read(epdDashboardProvider.notifier)
+            .applyAllExpenseCategoryTemplatesToCompany(
+              empresaId: picked.empresaId,
+            );
+
+        if (!mounted) return;
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Plantillas de tipo de gasto aplicadas a "${picked.empresaLabel}".',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al aplicar plantillas: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showApplyExpenseTemplateDialog(
+    EpdDashboardState state,
+    Map<String, dynamic> row,
+  ) async {
+    try {
+      await _withExpenseTemplateApplyLock(() async {
+        final templateId = (row['id'] ?? '').toString().trim();
+        if (templateId.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se pudo identificar la plantilla seleccionada.',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        final templateName =
+            (row['name'] ?? row['nombre'] ?? '').toString().trim().isEmpty
+            ? templateId
+            : (row['name'] ?? row['nombre']).toString().trim();
+
+        final picked = await _pickEmpresaForExpenseTemplateApply(
+          state,
+          title: 'Aplicar Plantilla de Tipo de Gasto',
+          subtitle: 'Plantilla: $templateName',
+        );
+        if (picked == null || !mounted) return;
+
+        final error = await ref
+            .read(epdDashboardProvider.notifier)
+            .applyExpenseCategoryTemplateToCompany(
+              templateId: templateId,
+              empresaId: picked.empresaId,
+            );
+
+        if (!mounted) return;
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Plantilla "$templateName" aplicada a la empresa "${picked.empresaLabel}".',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al importar plantilla: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _showInventoryAdjustDialog(Map<String, dynamic> row) async {
     final cantidadCtrl = TextEditingController();
     final motivoCtrl = TextEditingController();
@@ -1808,7 +2617,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                             ),
                           ),
                           Text(
-                            ' • Stock actual: ',
+                            '$nombreProducto - Stock actual: $stockActual',
                             style: GoogleFonts.outfit(
                               fontSize: 12,
                               color: const Color(0xFF64748B),
@@ -1868,7 +2677,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                       return 'Ingresa la cantidad';
                     }
                     if (double.tryParse(v.trim()) == null) {
-                      return 'Debe ser un número válido';
+                      return 'Debe ser un numero valido';
                     }
                     if (double.parse(v.trim()) == 0) {
                       return 'La cantidad no puede ser cero';
@@ -1925,9 +2734,9 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Observación (opcional)
+                // ObservaciÃƒÆ’Ã‚Â³n (opcional)
                 Text(
-                  'OBSERVACIÓN (opcional)',
+                  'OBSERVACION (opcional)',
                   style: GoogleFonts.outfit(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -2038,7 +2847,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Ajuste de inventario aplicado con éxito'),
+              content: Text('Ajuste de inventario aplicado con exito'),
               backgroundColor: Color(0xFF059669),
             ),
           );
@@ -2214,4 +3023,151 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       ),
     );
   }
+}
+
+class _CatalogImportSummary {
+  final int total;
+  final int newItems;
+  final int conflicts;
+  final int invalid;
+
+  const _CatalogImportSummary({
+    required this.total,
+    required this.newItems,
+    required this.conflicts,
+    required this.invalid,
+  });
+
+  factory _CatalogImportSummary.fromMap(Map<String, dynamic> map) {
+    int toInt(dynamic value) => (value is num) ? value.toInt() : 0;
+    return _CatalogImportSummary(
+      total: toInt(map['total']),
+      newItems: toInt(map['new']),
+      conflicts: toInt(map['conflict']),
+      invalid: toInt(map['invalid']),
+    );
+  }
+}
+
+class _CatalogImportPreviewRow {
+  final String rowKey;
+  final int rowNumber;
+  final String sheet;
+  final String displayName;
+  final String status;
+  final List<String> errors;
+
+  const _CatalogImportPreviewRow({
+    required this.rowKey,
+    required this.rowNumber,
+    required this.sheet,
+    required this.displayName,
+    required this.status,
+    required this.errors,
+  });
+
+  String get sheetLabel => sheet == 'categories' ? 'Categorias' : 'Productos';
+  bool get isConflict => status == 'conflict';
+  bool get isInvalid => status == 'invalid';
+
+  factory _CatalogImportPreviewRow.fromMap(
+    Map<String, dynamic> map,
+    String sheet,
+  ) {
+    int toInt(dynamic value) => (value is num) ? value.toInt() : 0;
+    final displayName = sheet == 'categories'
+        ? (map['NombreCategoria']?.toString() ?? '')
+        : (map['NombreProducto']?.toString() ?? '');
+    final errorsRaw = map['errors'];
+    final errors = errorsRaw is List
+        ? errorsRaw.map((e) => e.toString()).toList()
+        : const <String>[];
+    return _CatalogImportPreviewRow(
+      rowKey: map['rowKey']?.toString() ?? '',
+      rowNumber: toInt(map['rowNumber']),
+      sheet: sheet,
+      displayName: displayName.trim().isEmpty ? 'Sin nombre' : displayName,
+      status: map['status']?.toString() ?? 'new',
+      errors: errors,
+    );
+  }
+}
+
+class _CatalogImportPreviewModel {
+  final String draftToken;
+  final _CatalogImportSummary categoriesSummary;
+  final _CatalogImportSummary productsSummary;
+  final List<_CatalogImportPreviewRow> rows;
+
+  const _CatalogImportPreviewModel({
+    required this.draftToken,
+    required this.categoriesSummary,
+    required this.productsSummary,
+    required this.rows,
+  });
+
+  List<_CatalogImportPreviewRow> get conflictRows =>
+      rows.where((r) => r.isConflict).toList();
+
+  List<_CatalogImportPreviewRow> get invalidRows =>
+      rows.where((r) => r.isInvalid).toList();
+
+  factory _CatalogImportPreviewModel.fromMap(Map<String, dynamic> map) {
+    final summaryMap =
+        (map['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final categoriesMap =
+        (summaryMap['categories'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final productsMap =
+        (summaryMap['products'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+    final rows = <_CatalogImportPreviewRow>[];
+    final categoriesRows = map['categories'];
+    if (categoriesRows is List) {
+      for (final raw in categoriesRows) {
+        if (raw is Map<String, dynamic>) {
+          rows.add(_CatalogImportPreviewRow.fromMap(raw, 'categories'));
+        } else if (raw is Map) {
+          rows.add(
+            _CatalogImportPreviewRow.fromMap(
+              raw.map((k, v) => MapEntry(k.toString(), v)),
+              'categories',
+            ),
+          );
+        }
+      }
+    }
+
+    final productRows = map['products'];
+    if (productRows is List) {
+      for (final raw in productRows) {
+        if (raw is Map<String, dynamic>) {
+          rows.add(_CatalogImportPreviewRow.fromMap(raw, 'products'));
+        } else if (raw is Map) {
+          rows.add(
+            _CatalogImportPreviewRow.fromMap(
+              raw.map((k, v) => MapEntry(k.toString(), v)),
+              'products',
+            ),
+          );
+        }
+      }
+    }
+
+    return _CatalogImportPreviewModel(
+      draftToken: map['draftToken']?.toString() ?? '',
+      categoriesSummary: _CatalogImportSummary.fromMap(categoriesMap),
+      productsSummary: _CatalogImportSummary.fromMap(productsMap),
+      rows: rows,
+    );
+  }
+}
+
+class _CatalogImportDialogResult {
+  final Map<String, String> conflictDecisions;
+  final String invalidPolicy;
+
+  const _CatalogImportDialogResult({
+    required this.conflictDecisions,
+    required this.invalidPolicy,
+  });
 }

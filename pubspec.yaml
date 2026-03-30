@@ -27,6 +27,9 @@ dependencies:
   intl: ^0.20.2
   pdf: ^3.11.3
   printing: ^5.14.2
+  excel: ^4.0.6
+  file_picker: ^8.1.2
+  file_saver: ^0.2.14
 
 dev_dependencies:
   flutter_test:

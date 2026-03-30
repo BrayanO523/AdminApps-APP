@@ -27,7 +27,8 @@ class EpdRemoteDataSource {
         if (searchField != null && searchField.isNotEmpty) 'campo': searchField,
         if (searchValue != null && searchValue.isNotEmpty) 'valor': searchValue,
         if (searchOperator != null) 'operador': searchOperator,
-        if (empresaIds != null && empresaIds.isNotEmpty) 'empresa_id': empresaIds,
+        if (empresaIds != null && empresaIds.isNotEmpty)
+          'empresa_id': empresaIds,
       };
 
       final response = await _dioClient.instance.get(
@@ -135,7 +136,9 @@ class EpdRemoteDataSource {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Right(response.data as Map<String, dynamic>);
       }
-      return const Left(ServerFailure('Respuesta inesperada al ajustar inventario.'));
+      return const Left(
+        ServerFailure('Respuesta inesperada al ajustar inventario.'),
+      );
     } on DioException catch (e) {
       return _handleDioException(e);
     } catch (e) {
@@ -159,6 +162,123 @@ class EpdRemoteDataSource {
     } on DioException catch (e) {
       return _handleDioException(e);
     } catch (e) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
+  /// Aplica una plantilla global de tipo de gasto a una empresa,
+  /// creando/actualizando su registro correspondiente en `expense_categories`.
+  Future<Either<Failure, Map<String, dynamic>>> applyExpenseCategoryTemplate({
+    required String templateId,
+    required String empresaId,
+  }) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/expense_category_templates/$templateId/apply',
+        data: {'empresaId': empresaId},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Right(response.data as Map<String, dynamic>);
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada al aplicar plantilla.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (e) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
+  /// Aplica todas las plantillas globales de tipo de gasto a una empresa.
+  Future<Either<Failure, Map<String, dynamic>>>
+  applyAllExpenseCategoryTemplates({required String empresaId}) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/expense_category_templates/apply-all',
+        data: {'empresaId': empresaId},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return Right(response.data as Map<String, dynamic>);
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada al aplicar plantillas.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (e) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> previewCatalogImport({
+    required String empresaId,
+    required String templateVersion,
+    required List<Map<String, dynamic>> categories,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/catalog-import/preview',
+        data: {
+          'empresaId': empresaId,
+          'templateVersion': templateVersion,
+          'categories': categories,
+          'products': products,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          return Right(data);
+        }
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada en preview de importacion.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (_) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> commitCatalogImport({
+    required String empresaId,
+    required String templateVersion,
+    required String draftToken,
+    required List<Map<String, dynamic>> categories,
+    required List<Map<String, dynamic>> products,
+    required Map<String, String> conflictDecisions,
+    required String invalidPolicy,
+  }) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/catalog-import/commit',
+        data: {
+          'empresaId': empresaId,
+          'templateVersion': templateVersion,
+          'draftToken': draftToken,
+          'categories': categories,
+          'products': products,
+          'conflictDecisions': conflictDecisions,
+          'invalidPolicy': invalidPolicy,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          return Right(data);
+        }
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada en commit de importacion.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (_) {
       return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
     }
   }

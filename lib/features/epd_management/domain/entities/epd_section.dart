@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Definición de cada sección del sidebar EPD.
+/// Definicion de cada seccion del sidebar EPD.
 class EpdSection {
   final String id;
   final String label;
@@ -24,22 +24,16 @@ const List<EpdSection> epdSections = [
     icon: Icons.business_rounded,
   ),
   EpdSection(
-    id: 'branches',
-    label: 'Sucursales',
-    collection: 'branches',
-    icon: Icons.store_mall_directory_rounded,
-  ),
-  EpdSection(
     id: 'users',
     label: 'Usuarios',
     collection: 'users',
     icon: Icons.people_rounded,
   ),
   EpdSection(
-    id: 'clients',
-    label: 'Clientes',
-    collection: 'clients',
-    icon: Icons.person_pin_rounded,
+    id: 'categories',
+    label: 'Categorias',
+    collection: 'categories',
+    icon: Icons.category_rounded,
   ),
   EpdSection(
     id: 'products',
@@ -48,10 +42,16 @@ const List<EpdSection> epdSections = [
     icon: Icons.inventory_2_rounded,
   ),
   EpdSection(
-    id: 'categories',
-    label: 'Categorías',
-    collection: 'categories',
-    icon: Icons.category_rounded,
+    id: 'branches',
+    label: 'Sucursales',
+    collection: 'branches',
+    icon: Icons.store_mall_directory_rounded,
+  ),
+  EpdSection(
+    id: 'clients',
+    label: 'Clientes',
+    collection: 'clients',
+    icon: Icons.person_pin_rounded,
   ),
   EpdSection(
     id: 'combos',
@@ -60,10 +60,16 @@ const List<EpdSection> epdSections = [
     icon: Icons.fastfood_rounded,
   ),
   EpdSection(
-    id: 'sales',
-    label: 'Ventas',
-    collection: 'sales',
-    icon: Icons.point_of_sale_rounded,
+    id: 'expense_categories',
+    label: 'Tipos de Gasto',
+    collection: 'expense_categories',
+    icon: Icons.category_outlined,
+  ),
+  EpdSection(
+    id: 'expenses',
+    label: 'Registro de Gastos',
+    collection: 'expenses',
+    icon: Icons.receipt_long_rounded,
   ),
   EpdSection(
     id: 'inventory',
@@ -84,6 +90,12 @@ const List<EpdSection> epdSections = [
     icon: Icons.transfer_within_a_station_rounded,
   ),
   EpdSection(
+    id: 'sales',
+    label: 'Ventas',
+    collection: 'sales',
+    icon: Icons.point_of_sale_rounded,
+  ),
+  EpdSection(
     id: 'suppliers',
     label: 'Proveedores',
     collection: 'suppliers',
@@ -102,15 +114,21 @@ const List<EpdSection> epdSections = [
     icon: Icons.delete_sweep_rounded,
   ),
   EpdSection(
-    id: 'catalog_templates',
-    label: 'Plantillas Catálogo',
-    collection: 'catalog_templates',
-    icon: Icons.list_alt_rounded,
+    id: 'expense_category_templates',
+    label: 'Plantillas Tipo Gasto',
+    collection: 'expense_category_templates',
+    icon: Icons.palette_outlined,
   ),
   EpdSection(
     id: 'category_templates',
-    label: 'Plantillas Categoría',
+    label: 'Plantillas Categoria',
     collection: 'category_templates',
     icon: Icons.style_rounded,
+  ),
+  EpdSection(
+    id: 'catalog_templates',
+    label: 'Plantillas Catalogo',
+    collection: 'catalog_templates',
+    icon: Icons.list_alt_rounded,
   ),
 ];
