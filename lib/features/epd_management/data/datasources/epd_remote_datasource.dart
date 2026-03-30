@@ -211,6 +211,78 @@ class EpdRemoteDataSource {
     }
   }
 
+  Future<Either<Failure, Map<String, dynamic>>> previewCatalogImport({
+    required String empresaId,
+    required String templateVersion,
+    required List<Map<String, dynamic>> categories,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/catalog-import/preview',
+        data: {
+          'empresaId': empresaId,
+          'templateVersion': templateVersion,
+          'categories': categories,
+          'products': products,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          return Right(data);
+        }
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada en preview de importacion.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (_) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> commitCatalogImport({
+    required String empresaId,
+    required String templateVersion,
+    required String draftToken,
+    required List<Map<String, dynamic>> categories,
+    required List<Map<String, dynamic>> products,
+    required Map<String, String> conflictDecisions,
+    required String invalidPolicy,
+  }) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/eficent/catalog-import/commit',
+        data: {
+          'empresaId': empresaId,
+          'templateVersion': templateVersion,
+          'draftToken': draftToken,
+          'categories': categories,
+          'products': products,
+          'conflictDecisions': conflictDecisions,
+          'invalidPolicy': invalidPolicy,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          return Right(data);
+        }
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada en commit de importacion.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (_) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
   Either<Failure, T> _handleDioException<T>(DioException e) {
     if (e.response?.statusCode == 401) {
       return const Left(

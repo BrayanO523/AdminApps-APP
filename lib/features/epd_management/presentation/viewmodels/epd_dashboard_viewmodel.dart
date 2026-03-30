@@ -1300,6 +1300,11 @@ class EpdDashboardViewModel extends StateNotifier<EpdDashboardState> {
     );
   }
 
+  Future<void> refreshAfterExternalImport() async {
+    await _loadDependencies();
+    await selectSection(state.activeSection);
+  }
+
   void clearError() {
     state = state.copyWith(clearError: true);
   }
