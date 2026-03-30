@@ -1,3 +1,5 @@
+import '../utils/qrecauda_id_normalizer.dart';
+
 class QRecaudaSavePreparation {
   final Map<String, dynamic> payload;
   final String? error;
@@ -14,21 +16,27 @@ class QRecaudaCollectionSaveRules {
     required bool isEdit,
   }) {
     final payload = Map<String, dynamic>.from(rawPayload);
-
     _trimStringValues(payload);
+
+    final inputId = _text(payload['id']);
     payload.remove('id');
+    _injectAuditFields(payload: payload, isEdit: isEdit);
 
     switch (sectionId) {
       case 'municipalidades':
-        return _prepareMunicipalidades(payload);
+        return _prepareMunicipalidades(
+          payload,
+          isEdit: isEdit,
+          inputId: inputId,
+        );
       case 'mercados':
-        return _prepareMercados(payload);
+        return _prepareMercados(payload, isEdit: isEdit, inputId: inputId);
       case 'locales':
-        return _prepareLocales(payload);
+        return _prepareLocales(payload, isEdit: isEdit, inputId: inputId);
       case 'cobros':
         return _prepareCobros(payload);
       case 'tipos_negocio':
-        return _prepareTiposNegocio(payload);
+        return _prepareTiposNegocio(payload, isEdit: isEdit, inputId: inputId);
       case 'usuarios':
         return _prepareUsuarios(payload);
       default:
@@ -37,8 +45,10 @@ class QRecaudaCollectionSaveRules {
   }
 
   static QRecaudaSavePreparation _prepareMunicipalidades(
-    Map<String, dynamic> payload,
-  ) {
+    Map<String, dynamic> payload, {
+    required bool isEdit,
+    required String inputId,
+  }) {
     final nombre = _firstNonEmpty([payload['nombre'], payload['name']]);
     if (nombre.isEmpty) {
       return QRecaudaSavePreparation(
@@ -46,17 +56,29 @@ class QRecaudaCollectionSaveRules {
         error: 'El nombre de la municipalidad es obligatorio.',
       );
     }
+
     payload['nombre'] = nombre;
-    payload['activo'] = _toFlagInt(
-      payload['activo'] ?? payload['isActive'],
-      fallback: 1,
+    payload['activa'] = _toFlagBool(
+      payload['activa'] ?? payload['activo'],
+      fallback: true,
     );
+    payload.remove('activo');
+    payload['porcentaje'] = _toDouble(payload['porcentaje'], fallback: 0);
+
+    if (!isEdit) {
+      payload['id'] = inputId.isNotEmpty
+          ? inputId
+          : QRecaudaIdNormalizer.municipalidadId(nombre);
+    }
+
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
 
   static QRecaudaSavePreparation _prepareMercados(
-    Map<String, dynamic> payload,
-  ) {
+    Map<String, dynamic> payload, {
+    required bool isEdit,
+    required String inputId,
+  }) {
     final nombre = _firstNonEmpty([payload['nombre'], payload['name']]);
     if (nombre.isEmpty) {
       return QRecaudaSavePreparation(
@@ -79,19 +101,36 @@ class QRecaudaCollectionSaveRules {
 
     payload['nombre'] = nombre;
     payload['municipalidadId'] = municipalidadId;
-    payload['activo'] = _toFlagInt(
-      payload['activo'] ?? payload['isActive'],
-      fallback: 1,
+    payload['activo'] = _toFlagBool(
+      payload['activo'] ?? payload['activa'],
+      fallback: true,
     );
+    payload['latitud'] = _toNullableDouble(payload['latitud']);
+    payload['longitud'] = _toNullableDouble(payload['longitud']);
+
+    if (!isEdit) {
+      payload['id'] = inputId.isNotEmpty
+          ? inputId
+          : QRecaudaIdNormalizer.mercadoId(municipalidadId, nombre);
+    }
+
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
 
-  static QRecaudaSavePreparation _prepareLocales(Map<String, dynamic> payload) {
-    final nombre = _firstNonEmpty([payload['nombre'], payload['name']]);
-    if (nombre.isEmpty) {
+  static QRecaudaSavePreparation _prepareLocales(
+    Map<String, dynamic> payload, {
+    required bool isEdit,
+    required String inputId,
+  }) {
+    final nombreSocial = _firstNonEmpty([
+      payload['nombreSocial'],
+      payload['nombre'],
+      payload['name'],
+    ]);
+    if (nombreSocial.isEmpty) {
       return QRecaudaSavePreparation(
         payload: payload,
-        error: 'El nombre del local es obligatorio.',
+        error: 'El nombre social del local es obligatorio.',
       );
     }
 
@@ -99,30 +138,47 @@ class QRecaudaCollectionSaveRules {
       payload['mercadoId'],
       payload['idMercado'],
     ]);
-    final municipalidadId = _firstNonEmpty([
-      payload['municipalidadId'],
-      payload['idMunicipalidad'],
-    ]);
-    if (mercadoId.isEmpty && municipalidadId.isEmpty) {
+    if (mercadoId.isEmpty) {
       return QRecaudaSavePreparation(
         payload: payload,
-        error: 'Debes asociar el local a un mercado o municipalidad.',
+        error: 'Debes seleccionar un mercado para el local.',
       );
     }
 
-    payload['nombre'] = nombre;
+    payload['nombreSocial'] = nombreSocial;
+    payload.remove('nombre');
     payload['mercadoId'] = mercadoId;
-    payload['municipalidadId'] = municipalidadId;
-    payload['activo'] = _toFlagInt(
-      payload['activo'] ?? payload['isActive'],
-      fallback: 1,
-    );
+    payload['activo'] = _toFlagBool(payload['activo'], fallback: true);
+    payload['cuotaDiaria'] = _toNullableDouble(payload['cuotaDiaria']);
+    payload['espacioM2'] = _toNullableDouble(payload['espacioM2']);
+    payload['saldoAFavor'] = _toNullableDouble(payload['saldoAFavor']);
+    payload['deudaAcumulada'] = _toNullableDouble(payload['deudaAcumulada']);
+    payload['diaCobroMensual'] = _toNullableInt(payload['diaCobroMensual']);
+
+    final codigo = _text(payload['codigo']);
+    if (codigo.isNotEmpty) payload['codigoLower'] = codigo.toLowerCase();
+    final codigoCatastral = _text(payload['codigoCatastral']);
+    if (codigoCatastral.isNotEmpty) {
+      payload['codigoCatastralLower'] = codigoCatastral.toLowerCase();
+    }
+    final clave = _text(payload['clave']);
+    if (clave.isNotEmpty) payload['clave'] = clave.toUpperCase();
+
+    if (!isEdit) {
+      final generatedId = inputId.isNotEmpty
+          ? inputId
+          : QRecaudaIdNormalizer.localId(mercadoId, nombreSocial);
+      payload['id'] = generatedId;
+      payload['qrData'] = _firstNonEmpty([payload['qrData'], generatedId]);
+      if (!payload.containsKey('saldoAFavor')) payload['saldoAFavor'] = 0;
+      if (!payload.containsKey('deudaAcumulada')) payload['deudaAcumulada'] = 0;
+    }
+
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
 
   static QRecaudaSavePreparation _prepareCobros(Map<String, dynamic> payload) {
-    final montoRaw = payload['monto'] ?? payload['amount'] ?? payload['total'];
-    final monto = _toDouble(montoRaw);
+    final monto = _toDouble(payload['monto'], fallback: 0);
     if (monto <= 0) {
       return QRecaudaSavePreparation(
         payload: payload,
@@ -130,20 +186,21 @@ class QRecaudaCollectionSaveRules {
       );
     }
 
-    final fecha = _firstNonEmpty([payload['fecha'], payload['date']]);
     payload['monto'] = monto;
+    final fecha = _firstNonEmpty([payload['fecha'], payload['date']]);
     payload['fecha'] = fecha.isEmpty ? DateTime.now().toIso8601String() : fecha;
-    payload['estado'] = _toFlagInt(
-      payload['estado'] ?? payload['activo'] ?? payload['isActive'],
-      fallback: 1,
-    );
+    if (_text(payload['estado']).isEmpty) {
+      payload['estado'] = 'registrado';
+    }
 
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
 
   static QRecaudaSavePreparation _prepareTiposNegocio(
-    Map<String, dynamic> payload,
-  ) {
+    Map<String, dynamic> payload, {
+    required bool isEdit,
+    required String inputId,
+  }) {
     final nombre = _firstNonEmpty([payload['nombre'], payload['name']]);
     if (nombre.isEmpty) {
       return QRecaudaSavePreparation(
@@ -151,11 +208,28 @@ class QRecaudaCollectionSaveRules {
         error: 'El nombre del tipo de negocio es obligatorio.',
       );
     }
+
+    final municipalidadId = _firstNonEmpty([
+      payload['municipalidadId'],
+      payload['idMunicipalidad'],
+    ]);
+    if (municipalidadId.isEmpty) {
+      return QRecaudaSavePreparation(
+        payload: payload,
+        error: 'Debes seleccionar una municipalidad para el tipo de negocio.',
+      );
+    }
+
     payload['nombre'] = nombre;
-    payload['activo'] = _toFlagInt(
-      payload['activo'] ?? payload['isActive'],
-      fallback: 1,
-    );
+    payload['municipalidadId'] = municipalidadId;
+    payload['activo'] = _toFlagBool(payload['activo'], fallback: true);
+
+    if (!isEdit) {
+      payload['id'] = inputId.isNotEmpty
+          ? inputId
+          : QRecaudaIdNormalizer.tipoNegocioId(nombre);
+    }
+
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
 
@@ -182,13 +256,52 @@ class QRecaudaCollectionSaveRules {
       );
     }
 
+    final municipalidadId = _firstNonEmpty([
+      payload['municipalidadId'],
+      payload['idMunicipalidad'],
+    ]);
+    if (municipalidadId.isEmpty) {
+      return QRecaudaSavePreparation(
+        payload: payload,
+        error: 'Debes seleccionar una municipalidad para el usuario.',
+      );
+    }
+
     payload['nombre'] = nombre;
     if (email.isNotEmpty) payload['email'] = email;
-    payload['activo'] = _toFlagInt(
-      payload['activo'] ?? payload['isActive'],
-      fallback: 1,
-    );
+    payload['municipalidadId'] = municipalidadId;
+
+    final rol = _firstNonEmpty([payload['rol']]);
+    payload['rol'] = rol.isEmpty ? 'cobrador' : rol.toLowerCase();
+    payload['activo'] = _toFlagBool(payload['activo'], fallback: true);
+
+    final codigo = _text(payload['codigoCobrador']);
+    if (codigo.isNotEmpty) payload['codigoCobrador'] = codigo.toUpperCase();
+
     return QRecaudaSavePreparation(payload: payload, error: null);
+  }
+
+  static void _injectAuditFields({
+    required Map<String, dynamic> payload,
+    required bool isEdit,
+  }) {
+    final nowIso = DateTime.now().toIso8601String();
+    final actor = _firstNonEmpty([
+      payload['actualizadoPor'],
+      payload['creadoPor'],
+      'admin-web',
+    ]);
+
+    payload['actualizadoEn'] = nowIso;
+    payload['actualizadoPor'] = actor;
+
+    if (!isEdit) {
+      if (_text(payload['creadoEn']).isEmpty) payload['creadoEn'] = nowIso;
+      if (_text(payload['creadoPor']).isEmpty) payload['creadoPor'] = actor;
+    } else {
+      if (_text(payload['creadoEn']).isEmpty) payload.remove('creadoEn');
+      if (_text(payload['creadoPor']).isEmpty) payload.remove('creadoPor');
+    }
   }
 
   static void _trimStringValues(Map<String, dynamic> payload) {
@@ -200,34 +313,55 @@ class QRecaudaCollectionSaveRules {
     }
   }
 
+  static String _text(dynamic value) => value?.toString().trim() ?? '';
+
   static String _firstNonEmpty(List<dynamic> values) {
     for (final value in values) {
-      final text = value?.toString().trim() ?? '';
+      final text = _text(value);
       if (text.isNotEmpty) return text;
     }
     return '';
   }
 
-  static int _toFlagInt(dynamic rawValue, {int fallback = 1}) {
+  static bool _toFlagBool(dynamic rawValue, {bool fallback = true}) {
     if (rawValue == null) return fallback;
-    if (rawValue is bool) return rawValue ? 1 : 0;
-    if (rawValue is num) return rawValue > 0 ? 1 : 0;
+    if (rawValue is bool) return rawValue;
+    if (rawValue is num) return rawValue > 0;
+
     final text = rawValue.toString().trim().toLowerCase();
     if (text.isEmpty) return fallback;
-    if (text == 'true' || text == '1' || text == 'si' || text == 'sí') {
-      return 1;
+    if (text == 'true' || text == '1' || text == 'si' || text == 'yes') {
+      return true;
     }
     if (text == 'false' || text == '0' || text == 'no') {
-      return 0;
+      return false;
     }
     return fallback;
   }
 
-  static double _toDouble(dynamic rawValue) {
+  static double _toDouble(dynamic rawValue, {double fallback = 0}) {
+    if (rawValue == null) return fallback;
     if (rawValue is num) return rawValue.toDouble();
-    final text = rawValue?.toString().trim() ?? '';
-    if (text.isEmpty) return 0;
-    return double.tryParse(text.replaceAll(',', '.')) ?? 0;
+    final text = rawValue.toString().trim();
+    if (text.isEmpty) return fallback;
+    return double.tryParse(text.replaceAll(',', '.')) ?? fallback;
+  }
+
+  static double? _toNullableDouble(dynamic rawValue) {
+    if (rawValue == null) return null;
+    if (rawValue is num) return rawValue.toDouble();
+    final text = rawValue.toString().trim();
+    if (text.isEmpty) return null;
+    return double.tryParse(text.replaceAll(',', '.'));
+  }
+
+  static int? _toNullableInt(dynamic rawValue) {
+    if (rawValue == null) return null;
+    if (rawValue is int) return rawValue;
+    if (rawValue is num) return rawValue.toInt();
+    final text = rawValue.toString().trim();
+    if (text.isEmpty) return null;
+    return int.tryParse(text);
   }
 
   static bool _isValidEmail(String value) {

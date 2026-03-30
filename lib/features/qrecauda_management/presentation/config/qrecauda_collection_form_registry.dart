@@ -12,8 +12,6 @@ class QRecaudaCollectionFormRegistry {
     'last_modified',
     'last_update_cloud',
     'sync_status',
-    'creado_por',
-    'modificado_por',
     'token',
   ];
 
@@ -21,10 +19,11 @@ class QRecaudaCollectionFormRegistry {
     String sectionId, {
     bool isEdit = false,
   }) {
-    final hidden = List<String>.from(_baseHiddenSystemFields);
-    // En edicion no se debe permitir tocar IDs internos de relacion.
+    final hidden = List<String>.from(_baseHiddenSystemFields)
+      ..addAll(['creadoEn', 'actualizadoEn', 'creadoPor', 'actualizadoPor']);
+
     if (isEdit && sectionId == 'cobros') {
-      hidden.addAll(['municipalidadId', 'mercadoId', 'localId', 'usuarioId']);
+      hidden.addAll(['municipalidadId', 'mercadoId', 'localId', 'cobradorId']);
     }
     return hidden;
   }
@@ -41,21 +40,33 @@ class QRecaudaCollectionFormRegistry {
             label: 'Nombre',
             isRequired: true,
           ),
-          'direccion': const DynamicFormFieldSchema(
+          'municipio': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Direccion',
+            label: 'Municipio',
           ),
-          'telefono': const DynamicFormFieldSchema(
+          'departamento': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Telefono',
+            label: 'Departamento',
           ),
-          'correo': const DynamicFormFieldSchema(
+          'porcentaje': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Porcentaje',
+          ),
+          'slogan': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Correo',
+            label: 'Slogan',
           ),
-          'activo': const DynamicFormFieldSchema(
+          'fechaReferenciaMora': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.date,
+            label: 'Fecha Referencia Mora',
+          ),
+          'logo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Logo URL',
+          ),
+          'activa': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
-            label: 'Activo',
+            label: 'Activa',
           ),
         };
       case 'mercados':
@@ -68,11 +79,24 @@ class QRecaudaCollectionFormRegistry {
           'municipalidadId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             label: 'Municipalidad',
+            isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
-          'direccion': const DynamicFormFieldSchema(
+          'ubicacion': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Direccion',
+            label: 'Ubicacion',
+          ),
+          'codigo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Codigo',
+          ),
+          'latitud': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Latitud',
+          ),
+          'longitud': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Longitud',
           ),
           'activo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
@@ -81,14 +105,15 @@ class QRecaudaCollectionFormRegistry {
         };
       case 'locales':
         return {
-          'nombre': const DynamicFormFieldSchema(
+          'nombreSocial': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Nombre del Local',
+            label: 'Nombre Social',
             isRequired: true,
           ),
           'mercadoId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             label: 'Mercado',
+            isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.mercadoNames),
           ),
           'municipalidadId': DynamicFormFieldSchema(
@@ -96,9 +121,37 @@ class QRecaudaCollectionFormRegistry {
             label: 'Municipalidad',
             optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
-          'numeroLocal': const DynamicFormFieldSchema(
+          'tipoNegocioId': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Numero de Local',
+            label: 'Tipo Negocio ID',
+          ),
+          'representante': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Representante',
+          ),
+          'telefonoRepresentante': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Telefono Representante',
+          ),
+          'cuotaDiaria': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Cuota Diaria',
+          ),
+          'espacioM2': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Espacio M2',
+          ),
+          'codigo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Codigo',
+          ),
+          'codigoCatastral': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Codigo Catastral',
+          ),
+          'clave': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Clave',
           ),
           'activo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
@@ -116,18 +169,32 @@ class QRecaudaCollectionFormRegistry {
             label: 'Monto',
             isRequired: true,
           ),
-          'usuarioId': DynamicFormFieldSchema(
+          'cobradorId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
-            label: 'Usuario',
+            label: 'Cobrador',
             optionsResolver: () => _toDropdownOptions(state.usuarioNames),
           ),
-          'descripcion': const DynamicFormFieldSchema(
+          'mercadoId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Mercado',
+            optionsResolver: () => _toDropdownOptions(state.mercadoNames),
+          ),
+          'municipalidadId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Municipalidad',
+            optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
+          ),
+          'localId': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Descripcion',
+            label: 'Local ID',
+          ),
+          'observaciones': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Observaciones',
           ),
           'estado': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.boolean,
-            label: 'Activo',
+            type: DynamicFormFieldType.text,
+            label: 'Estado',
           ),
         };
       case 'tipos_negocio':
@@ -140,6 +207,12 @@ class QRecaudaCollectionFormRegistry {
           'descripcion': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
             label: 'Descripcion',
+          ),
+          'municipalidadId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Municipalidad',
+            isRequired: true,
+            optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
           'activo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
@@ -157,13 +230,27 @@ class QRecaudaCollectionFormRegistry {
             type: DynamicFormFieldType.text,
             label: 'Correo',
           ),
-          'telefono': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Telefono',
-          ),
-          'rol': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
+          'rol': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
             label: 'Rol',
+            options: const [
+              {'value': 'admin', 'label': 'Admin'},
+              {'value': 'cobrador', 'label': 'Cobrador'},
+            ],
+          ),
+          'municipalidadId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Municipalidad',
+            optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
+          ),
+          'mercadoId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Mercado',
+            optionsResolver: () => _toDropdownOptions(state.mercadoNames),
+          ),
+          'codigoCobrador': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Codigo Cobrador',
           ),
           'activo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
@@ -180,43 +267,66 @@ class QRecaudaCollectionFormRegistry {
       case 'municipalidades':
         return {
           'nombre': '',
-          'direccion': '',
-          'telefono': '',
-          'correo': '',
-          'activo': 1,
+          'municipio': '',
+          'departamento': '',
+          'porcentaje': 0,
+          'slogan': '',
+          'logo': '',
+          'fechaReferenciaMora': '',
+          'activa': true,
         };
       case 'mercados':
         return {
           'nombre': '',
           'municipalidadId': '',
-          'direccion': '',
-          'activo': 1,
+          'ubicacion': '',
+          'codigo': '',
+          'latitud': 0.0,
+          'longitud': 0.0,
+          'activo': true,
         };
       case 'locales':
         return {
-          'nombre': '',
-          'numeroLocal': '',
+          'nombreSocial': '',
           'mercadoId': '',
           'municipalidadId': '',
-          'activo': 1,
+          'tipoNegocioId': '',
+          'representante': '',
+          'telefonoRepresentante': '',
+          'cuotaDiaria': 0.0,
+          'espacioM2': 0.0,
+          'codigo': '',
+          'codigoCatastral': '',
+          'clave': '',
+          'activo': true,
         };
       case 'cobros':
         return {
           'fecha': DateTime.now().toIso8601String(),
           'monto': 0.0,
-          'descripcion': '',
-          'usuarioId': '',
-          'estado': 1,
+          'cobradorId': '',
+          'municipalidadId': '',
+          'mercadoId': '',
+          'localId': '',
+          'observaciones': '',
+          'estado': 'registrado',
         };
       case 'tipos_negocio':
-        return {'nombre': '', 'descripcion': '', 'activo': 1};
+        return {
+          'nombre': '',
+          'descripcion': '',
+          'municipalidadId': '',
+          'activo': true,
+        };
       case 'usuarios':
         return {
           'nombre': '',
           'email': '',
-          'telefono': '',
-          'rol': '',
-          'activo': 1,
+          'rol': 'cobrador',
+          'municipalidadId': '',
+          'mercadoId': '',
+          'codigoCobrador': '',
+          'activo': true,
         };
       default:
         return {};
