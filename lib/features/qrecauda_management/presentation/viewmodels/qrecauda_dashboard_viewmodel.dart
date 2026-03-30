@@ -265,6 +265,39 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     }
   }
 
+  String? _contextMunicipalidadIdForSection(String sectionId) {
+    if (sectionId == 'municipalidades') return null;
+    if (state.selectedMunicipalidades.length != 1) return null;
+    final contextId =
+        state.selectedMunicipalidades.first['id']?.toString().trim() ?? '';
+    return contextId.isEmpty ? null : contextId;
+  }
+
+  ({String? searchField, String? searchValue, String? searchOperator})
+  _resolveEffectiveQuery({
+    required String sectionId,
+    String? requestedField,
+    String? requestedValue,
+    String? requestedOperator,
+  }) {
+    final contextMunicipalidadId = _contextMunicipalidadIdForSection(sectionId);
+    if (contextMunicipalidadId == null) {
+      return (
+        searchField: requestedField,
+        searchValue: requestedValue,
+        searchOperator: requestedOperator,
+      );
+    }
+
+    // Regla administrativa: cuando hay exactamente 1 municipalidad de contexto,
+    // la consulta de secciones dependientes siempre queda restringida por ella.
+    return (
+      searchField: 'municipalidadId',
+      searchValue: contextMunicipalidadId,
+      searchOperator: '==',
+    );
+  }
+
   void selectMunicipalidadContext(Map<String, dynamic> municipalidad) {
     final current = List<Map<String, dynamic>>.from(
       state.selectedMunicipalidades,
@@ -277,10 +310,18 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       current.add(municipalidad);
     }
     state = state.copyWith(selectedMunicipalidades: current, clearError: true);
+    if (state.activeSection != 'municipalidades') {
+      // ignore: discarded_futures
+      selectSection(state.activeSection);
+    }
   }
 
   void clearMunicipalidadContext() {
     state = state.copyWith(clearMunicipalidades: true, clearError: true);
+    if (state.activeSection != 'municipalidades') {
+      // ignore: discarded_futures
+      selectSection(state.activeSection);
+    }
   }
 
   Future<void> selectSection(String sectionId) async {
@@ -288,6 +329,7 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       (s) => s.id == sectionId,
       orElse: () => qrecaudaSections.first,
     );
+    final effectiveQuery = _resolveEffectiveQuery(sectionId: section.id);
 
     state = state.copyWith(
       activeSection: sectionId,
@@ -295,12 +337,17 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       clearError: true,
       data: [],
       hasMore: true,
-      clearSearch: true,
+      searchField: effectiveQuery.searchField,
+      searchValue: effectiveQuery.searchValue,
+      clearSearch: effectiveQuery.searchField == null,
     );
 
     final result = await _dataSource.getCollection(
       section.collection,
       limit: 20,
+      searchField: effectiveQuery.searchField,
+      searchValue: effectiveQuery.searchValue,
+      searchOperator: effectiveQuery.searchOperator,
     );
 
     result.fold(
@@ -339,23 +386,29 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
         }
       }
     }
+    final effectiveQuery = _resolveEffectiveQuery(
+      sectionId: section.id,
+      requestedField: field,
+      requestedValue: value,
+      requestedOperator: operator,
+    );
 
     state = state.copyWith(
       isLoading: true,
       clearError: true,
       data: [],
       hasMore: true,
-      searchField: field,
-      searchValue: value,
-      clearSearch: field == null,
+      searchField: effectiveQuery.searchField,
+      searchValue: effectiveQuery.searchValue,
+      clearSearch: effectiveQuery.searchField == null,
     );
 
     final result = await _dataSource.getCollection(
       section.collection,
       limit: 20,
-      searchField: field,
-      searchValue: value,
-      searchOperator: operator,
+      searchField: effectiveQuery.searchField,
+      searchValue: effectiveQuery.searchValue,
+      searchOperator: effectiveQuery.searchOperator,
     );
 
     result.fold(
@@ -558,6 +611,79 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       password: password,
       municipalidadId: cleanMunicipalidadId,
       mercadoId: mercadoId,
+    );
+
+    return result.fold(
+      (failure) {
+        state = state.copyWith(isLoading: false, errorMessage: failure.message);
+        return failure.message;
+      },
+      (_) async {
+        await selectSection('usuarios');
+        return null;
+      },
+    );
+  }
+
+  Future<String?> createCobradorUser({
+    required String nombre,
+    required String email,
+    required String password,
+    required String municipalidadId,
+    String? mercadoId,
+    String? codigoCobrador,
+    List<String>? rutaAsignada,
+  }) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final cleanNombre = nombre.trim();
+    final cleanEmail = email.trim();
+    final cleanMunicipalidadId = municipalidadId.trim();
+    final cleanPassword = password.trim();
+
+    if (cleanNombre.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'El nombre del cobrador es obligatorio.',
+      );
+      return state.errorMessage;
+    }
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanEmail)) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Debes ingresar un correo valido.',
+      );
+      return state.errorMessage;
+    }
+    if (cleanPassword.length < 6) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'La contrasena debe tener al menos 6 caracteres.',
+      );
+      return state.errorMessage;
+    }
+    if (cleanMunicipalidadId.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Selecciona una municipalidad valida.',
+      );
+      return state.errorMessage;
+    }
+
+    final normalizedRuta = (rutaAsignada ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final result = await _dataSource.createCobradorUser(
+      nombre: cleanNombre,
+      email: cleanEmail,
+      password: cleanPassword,
+      municipalidadId: cleanMunicipalidadId,
+      mercadoId: mercadoId,
+      codigoCobrador: codigoCobrador,
+      rutaAsignada: normalizedRuta,
     );
 
     return result.fold(

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../viewmodels/qrecauda_dashboard_viewmodel.dart';
 
 class QRecaudaCollectionPayloadMapper {
@@ -18,6 +20,25 @@ class QRecaudaCollectionPayloadMapper {
         !formData.containsKey('nombreSocial') &&
         formData['nombre'] != null) {
       formData['nombreSocial'] = formData['nombre'];
+    }
+
+    if (formData['rutaAsignada'] is List) {
+      formData['rutaAsignada'] = (formData['rutaAsignada'] as List)
+          .map((e) => e.toString())
+          .join(', ');
+    }
+
+    if (formData['idsDeudasSaldadas'] is List) {
+      formData['idsDeudasSaldadas'] = (formData['idsDeudasSaldadas'] as List)
+          .map((e) => e.toString())
+          .join(', ');
+    }
+
+    if (formData['fechasDeudasSaldadas'] is List) {
+      formData['fechasDeudasSaldadas'] =
+          (formData['fechasDeudasSaldadas'] as List)
+              .map((e) => e.toString())
+              .join(', ');
     }
 
     return formData;
@@ -50,10 +71,28 @@ class QRecaudaCollectionPayloadMapper {
       }
     }
 
+    _normalizeMaybeListField(payload, 'rutaAsignada');
+    _normalizeMaybeListField(payload, 'idsDeudasSaldadas');
+    _normalizeMaybeListField(payload, 'fechasDeudasSaldadas');
+
     final idText = payload['id']?.toString().trim() ?? '';
     if (idText.isEmpty) {
       payload.remove('id');
     }
+
+    _removeEmptyStrings(payload, const {
+      'numeroBoleta',
+      'observaciones',
+      'mercadoId',
+      'tipoNegocioId',
+      'codigo',
+      'codigoCatastral',
+      'clave',
+      'logo',
+      'slogan',
+      'telefonoRepresentante',
+      'representante',
+    });
 
     return payload;
   }
@@ -89,6 +128,67 @@ class QRecaudaCollectionPayloadMapper {
     }
     if (text == 'false' || text == '0' || text == 'no') {
       payload[key] = 0;
+    }
+  }
+
+  static void _normalizeMaybeListField(
+    Map<String, dynamic> payload,
+    String key,
+  ) {
+    if (!payload.containsKey(key)) return;
+    final value = payload[key];
+    if (value == null) return;
+
+    if (value is List) {
+      payload[key] = value
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      return;
+    }
+
+    if (value is String) {
+      final text = value.trim();
+      if (text.isEmpty) {
+        payload.remove(key);
+        return;
+      }
+
+      if (text.startsWith('[') && text.endsWith(']')) {
+        try {
+          final decoded = jsonDecode(text);
+          if (decoded is List) {
+            payload[key] = decoded
+                .map((e) => e.toString().trim())
+                .where((e) => e.isNotEmpty)
+                .toList();
+            return;
+          }
+        } catch (_) {
+          // Falls back to CSV parsing.
+        }
+      }
+
+      payload[key] = text
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      return;
+    }
+
+    payload[key] = [value.toString()];
+  }
+
+  static void _removeEmptyStrings(
+    Map<String, dynamic> payload,
+    Set<String> keys,
+  ) {
+    for (final key in keys) {
+      if (!payload.containsKey(key)) continue;
+      if ((payload[key]?.toString().trim() ?? '').isEmpty) {
+        payload.remove(key);
+      }
     }
   }
 }

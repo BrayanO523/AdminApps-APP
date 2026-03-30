@@ -13,6 +13,11 @@ class QRecaudaCollectionFormRegistry {
     'last_update_cloud',
     'sync_status',
     'token',
+    'nombreLower',
+    'nombreSocialLower',
+    'codigoLower',
+    'codigoCatastralLower',
+    'ubicacion_geo',
   ];
 
   static List<String> hiddenSystemFieldsForSection(
@@ -119,6 +124,7 @@ class QRecaudaCollectionFormRegistry {
           'municipalidadId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             label: 'Municipalidad',
+            isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
           'tipoNegocioId': const DynamicFormFieldSchema(
@@ -140,6 +146,34 @@ class QRecaudaCollectionFormRegistry {
           'espacioM2': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.number,
             label: 'Espacio M2',
+          ),
+          'latitud': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Latitud',
+          ),
+          'longitud': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Longitud',
+          ),
+          'frecuenciaCobro': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Frecuencia de Cobro',
+            options: const [
+              {'value': 'diaria', 'label': 'Diaria'},
+              {'value': 'mensual', 'label': 'Mensual'},
+            ],
+          ),
+          'diaCobroMensual': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Dia de Cobro Mensual',
+          ),
+          'saldoAFavor': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Saldo a Favor',
+          ),
+          'deudaAcumulada': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Deuda Acumulada',
           ),
           'codigo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
@@ -172,6 +206,7 @@ class QRecaudaCollectionFormRegistry {
           'cobradorId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             label: 'Cobrador',
+            isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.usuarioNames),
           ),
           'mercadoId': DynamicFormFieldSchema(
@@ -182,19 +217,69 @@ class QRecaudaCollectionFormRegistry {
           'municipalidadId': DynamicFormFieldSchema(
             type: DynamicFormFieldType.dropdown,
             label: 'Municipalidad',
+            isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
           'localId': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
             label: 'Local ID',
+            isRequired: true,
+          ),
+          'estado': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Estado',
           ),
           'observaciones': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
             label: 'Observaciones',
           ),
-          'estado': const DynamicFormFieldSchema(
+          'cuotaDiaria': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Cuota Diaria',
+          ),
+          'saldoPendiente': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Saldo Pendiente',
+          ),
+          'deudaAnterior': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Deuda Anterior',
+          ),
+          'montoAbonadoDeuda': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Monto Abonado Deuda',
+          ),
+          'pagoACuota': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Pago a Cuota',
+          ),
+          'nuevoSaldoFavor': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Nuevo Saldo Favor',
+          ),
+          'montoMora': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Monto Mora',
+          ),
+          'correlativo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Correlativo',
+          ),
+          'anioCorrelativo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Anio Correlativo',
+          ),
+          'numeroBoleta': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Estado',
+            label: 'Numero Boleta',
+          ),
+          'idsDeudasSaldadas': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'IDs Deudas Saldadas (coma)',
+          ),
+          'fechasDeudasSaldadas': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Fechas Deudas Saldadas (coma)',
           ),
         };
       case 'tipos_negocio':
@@ -252,6 +337,18 @@ class QRecaudaCollectionFormRegistry {
             type: DynamicFormFieldType.text,
             label: 'Codigo Cobrador',
           ),
+          'rutaAsignada': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.text,
+            label: 'Ruta Asignada (IDs por coma)',
+          ),
+          'ultimoCorrelativo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Ultimo Correlativo',
+          ),
+          'anioCorrelativo': const DynamicFormFieldSchema(
+            type: DynamicFormFieldType.number,
+            label: 'Anio Correlativo',
+          ),
           'activo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
             label: 'Activo',
@@ -295,6 +392,12 @@ class QRecaudaCollectionFormRegistry {
           'telefonoRepresentante': '',
           'cuotaDiaria': 0.0,
           'espacioM2': 0.0,
+          'latitud': 0.0,
+          'longitud': 0.0,
+          'frecuenciaCobro': 'diaria',
+          'diaCobroMensual': 1,
+          'saldoAFavor': 0.0,
+          'deudaAcumulada': 0.0,
           'codigo': '',
           'codigoCatastral': '',
           'clave': '',
@@ -308,8 +411,20 @@ class QRecaudaCollectionFormRegistry {
           'municipalidadId': '',
           'mercadoId': '',
           'localId': '',
-          'observaciones': '',
           'estado': 'registrado',
+          'observaciones': '',
+          'cuotaDiaria': 0.0,
+          'saldoPendiente': 0.0,
+          'deudaAnterior': 0.0,
+          'montoAbonadoDeuda': 0.0,
+          'pagoACuota': 0.0,
+          'nuevoSaldoFavor': 0.0,
+          'montoMora': 0.0,
+          'correlativo': 0,
+          'anioCorrelativo': DateTime.now().year,
+          'numeroBoleta': '',
+          'idsDeudasSaldadas': '',
+          'fechasDeudasSaldadas': '',
         };
       case 'tipos_negocio':
         return {
@@ -326,6 +441,9 @@ class QRecaudaCollectionFormRegistry {
           'municipalidadId': '',
           'mercadoId': '',
           'codigoCobrador': '',
+          'rutaAsignada': '',
+          'ultimoCorrelativo': 0,
+          'anioCorrelativo': DateTime.now().year,
           'activo': true,
         };
       default:

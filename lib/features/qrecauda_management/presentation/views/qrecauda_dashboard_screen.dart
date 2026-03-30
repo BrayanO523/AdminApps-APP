@@ -103,7 +103,19 @@ class _QRecaudaDashboardScreenState
       }
     });
 
-    final hasFilters = state.searchField != null && state.searchValue != null;
+    final selectedContextMunicipalidadId =
+        state.selectedMunicipalidades.length == 1
+        ? (state.selectedMunicipalidades.first['id']?.toString().trim() ?? '')
+        : '';
+    final isOnlyContextFilter =
+        state.activeSection != 'municipalidades' &&
+        state.searchField == 'municipalidadId' &&
+        selectedContextMunicipalidadId.isNotEmpty &&
+        state.searchValue == selectedContextMunicipalidadId;
+    final hasFilters =
+        state.searchField != null &&
+        state.searchValue != null &&
+        !isOnlyContextFilter;
     final isLocalFiltered = _localSearchText.isNotEmpty;
     final filteredData = _applyLocalFilter(state.data);
 
@@ -538,32 +550,68 @@ class _QRecaudaDashboardScreenState
         if (state.activeSection == 'usuarios' && !isMobile)
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: OutlinedButton.icon(
-              onPressed: state.isLoading
-                  ? null
-                  : () => _showCreateAdminDialog(),
-              icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
-              label: Text(
-                'Crear Admin',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF1E3A8A),
-                side: const BorderSide(color: Color(0xFF93C5FD)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
+            child: Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: state.isLoading
+                      ? null
+                      : () => _showCreateCobradorDialog(),
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                  label: Text(
+                    'Crear Cobrador',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF065F46),
+                    side: const BorderSide(color: Color(0xFF6EE7B7)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: state.isLoading
+                      ? null
+                      : () => _showCreateAdminDialog(),
+                  icon: const Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    'Crear Admin',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1E3A8A),
+                    side: const BorderSide(color: Color(0xFF93C5FD)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         if (isMobile)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (state.activeSection == 'usuarios')
+                IconButton(
+                  onPressed: state.isLoading ? null : _showCreateCobradorDialog,
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 24),
+                  color: const Color(0xFF065F46),
+                  tooltip: 'Crear Cobrador',
+                ),
               if (state.activeSection == 'usuarios')
                 IconButton(
                   onPressed: state.isLoading ? null : _showCreateAdminDialog,
@@ -574,17 +622,18 @@ class _QRecaudaDashboardScreenState
                   color: const Color(0xFF1E3A8A),
                   tooltip: 'Crear Admin',
                 ),
-              IconButton(
-                onPressed: state.isLoading
-                    ? null
-                    : () => _showCreateDialog(state),
-                icon: const Icon(Icons.add_circle_rounded, size: 28),
-                color: const Color(0xFFD97706),
-                tooltip: 'Crear Documento',
-              ),
+              if (state.activeSection != 'usuarios')
+                IconButton(
+                  onPressed: state.isLoading
+                      ? null
+                      : () => _showCreateDialog(state),
+                  icon: const Icon(Icons.add_circle_rounded, size: 28),
+                  color: const Color(0xFFD97706),
+                  tooltip: 'Crear Documento',
+                ),
             ],
           )
-        else
+        else if (state.activeSection != 'usuarios')
           ElevatedButton.icon(
             onPressed: state.isLoading ? null : () => _showCreateDialog(state),
             icon: const Icon(Icons.add_rounded, size: 18),
@@ -927,7 +976,7 @@ class _QRecaudaDashboardScreenState
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocalState) => AlertDialog(
           title: Text(
-            'Crear Admin [DEV]',
+            'Crear Admin',
             style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
           ),
           content: SizedBox(
@@ -1054,6 +1103,207 @@ class _QRecaudaDashboardScreenState
         const SnackBar(
           content: Text('Admin creado exitosamente.'),
           backgroundColor: Color(0xFFD97706),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showCreateCobradorDialog() async {
+    final state = ref.read(qrecaudaDashboardProvider);
+    if (state.selectedMunicipalidades.length != 1) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Selecciona exactamente 1 municipalidad de contexto para crear el cobrador.',
+          ),
+          backgroundColor: Color(0xFFB45309),
+        ),
+      );
+      return;
+    }
+
+    final municipalidad = state.selectedMunicipalidades.first;
+    final municipalidadId = municipalidad['id']?.toString().trim() ?? '';
+    if (municipalidadId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La municipalidad seleccionada no tiene ID valido.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+
+    final nombreCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final codigoCtrl = TextEditingController();
+    final rutaCtrl = TextEditingController();
+    bool showPassword = false;
+    String? mercadoId;
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocalState) => AlertDialog(
+          title: Text(
+            'Crear Cobrador',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+          ),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Municipalidad: ${municipalidad['nombre'] ?? municipalidad['name'] ?? municipalidadId}',
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    color: const Color(0xFF334155),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre completo',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passCtrl,
+                  obscureText: !showPassword,
+                  decoration: InputDecoration(
+                    labelText: 'Contrasena',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      onPressed: () =>
+                          setLocalState(() => showPassword = !showPassword),
+                      icon: Icon(
+                        showPassword ? Icons.visibility_off : Icons.visibility,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: codigoCtrl,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Codigo Cobrador (opcional)',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: mercadoId,
+                  decoration: const InputDecoration(
+                    labelText: 'Mercado (opcional)',
+                    prefixIcon: Icon(Icons.storefront_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Sin mercado'),
+                    ),
+                    ...state.mercadoNames.entries.map(
+                      (entry) => DropdownMenuItem<String?>(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => mercadoId = value,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: rutaCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Ruta Asignada (IDs por coma)',
+                    prefixIcon: Icon(Icons.alt_route_rounded),
+                    hintText: 'LOC-xxx-001, LOC-xxx-002',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '* Esta accion crea usuario en Auth y documento en usuarios.',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                final rutas = rutaCtrl.text
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList();
+                final error = await ref
+                    .read(qrecaudaDashboardProvider.notifier)
+                    .createCobradorUser(
+                      nombre: nombreCtrl.text,
+                      email: emailCtrl.text,
+                      password: passCtrl.text,
+                      municipalidadId: municipalidadId,
+                      mercadoId: mercadoId,
+                      codigoCobrador: codigoCtrl.text,
+                      rutaAsignada: rutas,
+                    );
+                if (!ctx.mounted) return;
+                if (error != null) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text(error),
+                      backgroundColor: const Color(0xFFDC2626),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: const Text('Crear Cobrador'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nombreCtrl.dispose();
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    codigoCtrl.dispose();
+    rutaCtrl.dispose();
+
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cobrador creado exitosamente.'),
+          backgroundColor: Color(0xFF059669),
         ),
       );
     }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../utils/qrecauda_id_normalizer.dart';
 
 class QRecaudaSavePreparation {
@@ -107,6 +109,7 @@ class QRecaudaCollectionSaveRules {
     );
     payload['latitud'] = _toNullableDouble(payload['latitud']);
     payload['longitud'] = _toNullableDouble(payload['longitud']);
+    payload['nombreLower'] = _toSlug(nombre);
 
     if (!isEdit) {
       payload['id'] = inputId.isNotEmpty
@@ -145,15 +148,42 @@ class QRecaudaCollectionSaveRules {
       );
     }
 
+    final municipalidadId = _firstNonEmpty([
+      payload['municipalidadId'],
+      payload['idMunicipalidad'],
+      payload['municipioId'],
+    ]);
+    if (municipalidadId.isEmpty) {
+      return QRecaudaSavePreparation(
+        payload: payload,
+        error: 'Debes seleccionar una municipalidad para el local.',
+      );
+    }
+
     payload['nombreSocial'] = nombreSocial;
+    payload['nombreSocialLower'] = nombreSocial.toLowerCase();
     payload.remove('nombre');
     payload['mercadoId'] = mercadoId;
+    payload['municipalidadId'] = municipalidadId;
     payload['activo'] = _toFlagBool(payload['activo'], fallback: true);
     payload['cuotaDiaria'] = _toNullableDouble(payload['cuotaDiaria']);
     payload['espacioM2'] = _toNullableDouble(payload['espacioM2']);
     payload['saldoAFavor'] = _toNullableDouble(payload['saldoAFavor']);
     payload['deudaAcumulada'] = _toNullableDouble(payload['deudaAcumulada']);
     payload['diaCobroMensual'] = _toNullableInt(payload['diaCobroMensual']);
+    payload['latitud'] = _toNullableDouble(payload['latitud']);
+    payload['longitud'] = _toNullableDouble(payload['longitud']);
+
+    final frecuenciaRaw = _firstNonEmpty([
+      payload['frecuenciaCobro'],
+      payload['frecuencia'],
+    ]).toLowerCase();
+    payload['frecuenciaCobro'] = frecuenciaRaw == 'mensual'
+        ? 'mensual'
+        : 'diaria';
+    if (payload['frecuenciaCobro'] != 'mensual') {
+      payload['diaCobroMensual'] = null;
+    }
 
     final codigo = _text(payload['codigo']);
     if (codigo.isNotEmpty) payload['codigoLower'] = codigo.toLowerCase();
@@ -186,12 +216,63 @@ class QRecaudaCollectionSaveRules {
       );
     }
 
+    final municipalidadId = _firstNonEmpty([
+      payload['municipalidadId'],
+      payload['idMunicipalidad'],
+    ]);
+    if (municipalidadId.isEmpty) {
+      return QRecaudaSavePreparation(
+        payload: payload,
+        error: 'Debes seleccionar una municipalidad para el cobro.',
+      );
+    }
+
+    final localId = _firstNonEmpty([payload['localId'], payload['idLocal']]);
+    if (localId.isEmpty) {
+      return QRecaudaSavePreparation(
+        payload: payload,
+        error: 'Debes seleccionar un local para el cobro.',
+      );
+    }
+
+    final cobradorId = _firstNonEmpty([
+      payload['cobradorId'],
+      payload['usuarioId'],
+    ]);
+    if (cobradorId.isEmpty) {
+      return QRecaudaSavePreparation(
+        payload: payload,
+        error: 'Debes seleccionar un cobrador para el cobro.',
+      );
+    }
+
     payload['monto'] = monto;
+    payload['municipalidadId'] = municipalidadId;
+    payload['localId'] = localId;
+    payload['cobradorId'] = cobradorId;
+
     final fecha = _firstNonEmpty([payload['fecha'], payload['date']]);
     payload['fecha'] = fecha.isEmpty ? DateTime.now().toIso8601String() : fecha;
     if (_text(payload['estado']).isEmpty) {
       payload['estado'] = 'registrado';
     }
+
+    payload['cuotaDiaria'] = _toNullableDouble(payload['cuotaDiaria']);
+    payload['saldoPendiente'] = _toNullableDouble(payload['saldoPendiente']);
+    payload['deudaAnterior'] = _toNullableDouble(payload['deudaAnterior']);
+    payload['montoAbonadoDeuda'] = _toNullableDouble(
+      payload['montoAbonadoDeuda'],
+    );
+    payload['pagoACuota'] = _toNullableDouble(payload['pagoACuota']);
+    payload['nuevoSaldoFavor'] = _toNullableDouble(payload['nuevoSaldoFavor']);
+    payload['montoMora'] = _toNullableDouble(payload['montoMora']);
+    payload['correlativo'] = _toNullableInt(payload['correlativo']);
+    payload['anioCorrelativo'] = _toNullableInt(payload['anioCorrelativo']);
+
+    payload['idsDeudasSaldadas'] = _toStringList(payload['idsDeudasSaldadas']);
+    payload['fechasDeudasSaldadas'] = _toStringList(
+      payload['fechasDeudasSaldadas'],
+    );
 
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
@@ -277,6 +358,12 @@ class QRecaudaCollectionSaveRules {
 
     final codigo = _text(payload['codigoCobrador']);
     if (codigo.isNotEmpty) payload['codigoCobrador'] = codigo.toUpperCase();
+
+    final ruta = _toStringList(payload['rutaAsignada']);
+    if (ruta.isNotEmpty) payload['rutaAsignada'] = ruta;
+
+    payload['ultimoCorrelativo'] = _toNullableInt(payload['ultimoCorrelativo']);
+    payload['anioCorrelativo'] = _toNullableInt(payload['anioCorrelativo']);
 
     return QRecaudaSavePreparation(payload: payload, error: null);
   }
@@ -367,5 +454,50 @@ class QRecaudaCollectionSaveRules {
   static bool _isValidEmail(String value) {
     const pattern = r'^[^@\s]+@[^@\s]+\.[^@\s]+$';
     return RegExp(pattern).hasMatch(value.trim());
+  }
+
+  static List<String> _toStringList(dynamic rawValue) {
+    if (rawValue == null) return const [];
+    if (rawValue is List) {
+      return rawValue.map((e) => _text(e)).where((e) => e.isNotEmpty).toList();
+    }
+    if (rawValue is String) {
+      final trimmed = rawValue.trim();
+      if (trimmed.isEmpty) return const [];
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is List) {
+            return decoded
+                .map((e) => _text(e))
+                .where((e) => e.isNotEmpty)
+                .toList();
+          }
+        } catch (_) {
+          // Fallback to CSV parsing.
+        }
+      }
+      return trimmed
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    final text = _text(rawValue);
+    return text.isEmpty ? const [] : [text];
+  }
+
+  static String _toSlug(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[áàäâ]'), 'a')
+        .replaceAll(RegExp(r'[éèëê]'), 'e')
+        .replaceAll(RegExp(r'[íìïî]'), 'i')
+        .replaceAll(RegExp(r'[óòöô]'), 'o')
+        .replaceAll(RegExp(r'[úùüû]'), 'u')
+        .replaceAll('ñ', 'n')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
   }
 }

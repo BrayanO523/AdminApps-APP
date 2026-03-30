@@ -152,6 +152,45 @@ class QRecaudaRemoteDataSource {
     }
   }
 
+  /// Crea un usuario cobrador en Firebase Auth + Firestore (modulo QRecauda).
+  Future<Either<Failure, Map<String, dynamic>>> createCobradorUser({
+    required String nombre,
+    required String email,
+    required String password,
+    required String municipalidadId,
+    String? mercadoId,
+    String? codigoCobrador,
+    List<String>? rutaAsignada,
+  }) async {
+    try {
+      final response = await _dioClient.instance.post(
+        '/municipalidad/cobradores',
+        data: {
+          'nombre': nombre,
+          'email': email,
+          'password': password,
+          'municipalidadId': municipalidadId,
+          if (mercadoId != null && mercadoId.trim().isNotEmpty)
+            'mercadoId': mercadoId.trim(),
+          if (codigoCobrador != null && codigoCobrador.trim().isNotEmpty)
+            'codigoCobrador': codigoCobrador.trim().toUpperCase(),
+          if (rutaAsignada != null && rutaAsignada.isNotEmpty)
+            'rutaAsignada': rutaAsignada,
+        },
+      );
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return Right(response.data as Map<String, dynamic>);
+      }
+      return const Left(
+        ServerFailure('Respuesta inesperada al crear cobrador.'),
+      );
+    } on DioException catch (e) {
+      return _handleDioException(e);
+    } catch (_) {
+      return const Left(NetworkFailure('No se pudo conectar con el servidor.'));
+    }
+  }
+
   /// Actualiza un documento existente.
   Future<Either<Failure, Map<String, dynamic>>> updateDocument(
     String coleccion,
