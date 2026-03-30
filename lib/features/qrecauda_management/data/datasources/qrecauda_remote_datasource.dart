@@ -6,8 +6,23 @@ import '../../../../core/network/dio_client.dart';
 
 class QRecaudaRemoteDataSource {
   final DioClient _dioClient;
+  static const Set<String> _allowedCollections = {
+    'municipalidades',
+    'mercados',
+    'locales',
+    'cobros',
+    'tipos_negocio',
+    'usuarios',
+  };
 
   QRecaudaRemoteDataSource(this._dioClient);
+
+  Failure? _validateCollection(String collection) {
+    if (_allowedCollections.contains(collection)) return null;
+    return ServerFailure(
+      "La coleccion '$collection' no pertenece al modulo QRecauda.",
+    );
+  }
 
   /// Obtiene documentos de [coleccion] desde la API, paginados y filtrados.
   Future<Either<Failure, ({List<Map<String, dynamic>> data, int total})>>
@@ -19,6 +34,11 @@ class QRecaudaRemoteDataSource {
     String? searchValue,
     String? searchOperator,
   }) async {
+    final invalidCollection = _validateCollection(coleccion);
+    if (invalidCollection != null) {
+      return Left(invalidCollection);
+    }
+
     try {
       final queryParams = {
         'limite': limit,
@@ -53,6 +73,11 @@ class QRecaudaRemoteDataSource {
     String collectionPath,
     String docId,
   ) async {
+    final invalidCollection = _validateCollection(collectionPath);
+    if (invalidCollection != null) {
+      return Left(invalidCollection);
+    }
+
     try {
       final response = await _dioClient.instance.get(
         '/municipalidad/$collectionPath/$docId',
@@ -75,6 +100,11 @@ class QRecaudaRemoteDataSource {
     String coleccion,
     Map<String, dynamic> data,
   ) async {
+    final invalidCollection = _validateCollection(coleccion);
+    if (invalidCollection != null) {
+      return Left(invalidCollection);
+    }
+
     try {
       final response = await _dioClient.instance.post(
         '/municipalidad/$coleccion',
@@ -97,6 +127,11 @@ class QRecaudaRemoteDataSource {
     String id,
     Map<String, dynamic> data,
   ) async {
+    final invalidCollection = _validateCollection(coleccion);
+    if (invalidCollection != null) {
+      return Left(invalidCollection);
+    }
+
     try {
       final response = await _dioClient.instance.put(
         '/municipalidad/$coleccion/$id',
@@ -118,6 +153,11 @@ class QRecaudaRemoteDataSource {
     String coleccion,
     String id,
   ) async {
+    final invalidCollection = _validateCollection(coleccion);
+    if (invalidCollection != null) {
+      return Left(invalidCollection);
+    }
+
     try {
       final response = await _dioClient.instance.delete(
         '/municipalidad/$coleccion/$id',

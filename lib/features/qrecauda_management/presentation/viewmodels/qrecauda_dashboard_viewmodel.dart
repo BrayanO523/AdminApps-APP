@@ -4,6 +4,7 @@ import '../../../../app/di/network_provider.dart';
 import '../../../../core/utils/resolvable_state.dart';
 import '../../data/datasources/qrecauda_remote_datasource.dart';
 import '../../domain/entities/qrecauda_section.dart';
+import '../../domain/services/qrecauda_collection_save_rules.dart';
 
 // ── Estado ──
 class QRecaudaDashboardState implements ResolvableState {
@@ -428,8 +429,20 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     final section = qrecaudaSections.firstWhere(
       (s) => s.id == state.activeSection,
     );
+    final prepared = QRecaudaCollectionSaveRules.prepare(
+      sectionId: section.id,
+      rawPayload: data,
+      isEdit: false,
+    );
+    if (prepared.error != null) {
+      state = state.copyWith(isLoading: false, errorMessage: prepared.error);
+      return prepared.error;
+    }
 
-    final result = await _dataSource.createDocument(section.collection, data);
+    final result = await _dataSource.createDocument(
+      section.collection,
+      prepared.payload,
+    );
     return result.fold(
       (failure) {
         state = state.copyWith(isLoading: false, errorMessage: failure.message);
@@ -447,11 +460,20 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     final section = qrecaudaSections.firstWhere(
       (s) => s.id == state.activeSection,
     );
+    final prepared = QRecaudaCollectionSaveRules.prepare(
+      sectionId: section.id,
+      rawPayload: data,
+      isEdit: true,
+    );
+    if (prepared.error != null) {
+      state = state.copyWith(isLoading: false, errorMessage: prepared.error);
+      return prepared.error;
+    }
 
     final result = await _dataSource.updateDocument(
       section.collection,
       id,
-      data,
+      prepared.payload,
     );
     return result.fold(
       (failure) {

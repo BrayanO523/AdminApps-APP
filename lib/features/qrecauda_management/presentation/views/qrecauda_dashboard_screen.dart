@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/qrecauda_section.dart';
+import '../config/qrecauda_collection_form_registry.dart';
+import '../mappers/qrecauda_collection_payload_mapper.dart';
 import '../viewmodels/qrecauda_dashboard_viewmodel.dart';
 import '../widgets/qrecauda_sidebar.dart';
 import '../../../shared/presentation/widgets/dynamic_data_table.dart';
@@ -775,12 +777,17 @@ class _QRecaudaDashboardScreenState
   }
 
   Future<void> _showCreateDialog(QRecaudaDashboardState state) async {
+    final sectionId = state.activeSection;
     final template = state.data.isNotEmpty
         ? state.data.first
         : <String, dynamic>{};
-    final initialData = <String, dynamic>{};
+
+    final initialData = <String, dynamic>{
+      ...QRecaudaCollectionFormRegistry.baseFieldsForSection(sectionId),
+    };
     for (final key in template.keys) {
       if (key == 'id') continue;
+      if (initialData.containsKey(key)) continue;
       if (template[key] is int) {
         initialData[key] = 0;
       } else if (template[key] is double) {
@@ -791,6 +798,15 @@ class _QRecaudaDashboardScreenState
         initialData[key] = '';
       }
     }
+    final fieldSchemas = QRecaudaCollectionFormRegistry.buildFieldSchemas(
+      sectionId: sectionId,
+      state: state,
+    );
+    final hiddenFields =
+        QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
+          sectionId,
+          isEdit: false,
+        );
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -799,13 +815,20 @@ class _QRecaudaDashboardScreenState
         initialData: initialData,
         isEdit: false,
         title: 'Crear en ${state.activeSectionLabel}',
+        fieldSchemas: fieldSchemas.isEmpty ? null : fieldSchemas,
+        hiddenFields: hiddenFields,
       ),
     );
 
     if (result != null && mounted) {
+      final payload = QRecaudaCollectionPayloadMapper.fromFormToApi(
+        sectionId: sectionId,
+        state: state,
+        formData: result,
+      );
       final error = await ref
           .read(qrecaudaDashboardProvider.notifier)
-          .createItem(result);
+          .createItem(payload);
       if (mounted) {
         if (error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -824,13 +847,31 @@ class _QRecaudaDashboardScreenState
   }
 
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
+    final state = ref.read(qrecaudaDashboardProvider);
+    final sectionId = state.activeSection;
+    final formData = QRecaudaCollectionPayloadMapper.fromApiToForm(
+      sectionId: sectionId,
+      row: row,
+    );
+    final fieldSchemas = QRecaudaCollectionFormRegistry.buildFieldSchemas(
+      sectionId: sectionId,
+      state: state,
+    );
+    final hiddenFields =
+        QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
+          sectionId,
+          isEdit: true,
+        );
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
       builder: (_) => DynamicFormDialog(
-        initialData: row,
+        initialData: formData,
         isEdit: true,
         title: 'Editar Documento',
+        fieldSchemas: fieldSchemas.isEmpty ? null : fieldSchemas,
+        hiddenFields: hiddenFields,
       ),
     );
 
@@ -843,9 +884,15 @@ class _QRecaudaDashboardScreenState
         return;
       }
 
+      final payload = QRecaudaCollectionPayloadMapper.fromFormToApi(
+        sectionId: sectionId,
+        state: state,
+        formData: result,
+      );
+
       final error = await ref
           .read(qrecaudaDashboardProvider.notifier)
-          .updateItem(id, result);
+          .updateItem(id, payload);
       if (mounted) {
         if (error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
