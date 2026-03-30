@@ -4,6 +4,7 @@ import '../../../../app/di/network_provider.dart';
 import '../../../../core/utils/resolvable_state.dart';
 import '../../data/datasources/qrecauda_remote_datasource.dart';
 import '../../domain/entities/qrecauda_section.dart';
+import '../../domain/services/qrecauda_collection_save_rules.dart';
 
 // ── Estado ──
 class QRecaudaDashboardState implements ResolvableState {
@@ -428,8 +429,20 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     final section = qrecaudaSections.firstWhere(
       (s) => s.id == state.activeSection,
     );
+    final prepared = QRecaudaCollectionSaveRules.prepare(
+      sectionId: section.id,
+      rawPayload: data,
+      isEdit: false,
+    );
+    if (prepared.error != null) {
+      state = state.copyWith(isLoading: false, errorMessage: prepared.error);
+      return prepared.error;
+    }
 
-    final result = await _dataSource.createDocument(section.collection, data);
+    final result = await _dataSource.createDocument(
+      section.collection,
+      prepared.payload,
+    );
     return result.fold(
       (failure) {
         state = state.copyWith(isLoading: false, errorMessage: failure.message);
@@ -447,11 +460,20 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     final section = qrecaudaSections.firstWhere(
       (s) => s.id == state.activeSection,
     );
+    final prepared = QRecaudaCollectionSaveRules.prepare(
+      sectionId: section.id,
+      rawPayload: data,
+      isEdit: true,
+    );
+    if (prepared.error != null) {
+      state = state.copyWith(isLoading: false, errorMessage: prepared.error);
+      return prepared.error;
+    }
 
     final result = await _dataSource.updateDocument(
       section.collection,
       id,
-      data,
+      prepared.payload,
     );
     return result.fold(
       (failure) {
@@ -486,6 +508,68 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
 
   void clearError() {
     state = state.copyWith(clearError: true);
+  }
+
+  Future<String?> createAdminUser({
+    required String nombre,
+    required String email,
+    required String password,
+    required String municipalidadId,
+    String? mercadoId,
+  }) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    final cleanNombre = nombre.trim();
+    final cleanEmail = email.trim();
+    final cleanMunicipalidadId = municipalidadId.trim();
+
+    if (cleanNombre.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'El nombre del admin es obligatorio.',
+      );
+      return state.errorMessage;
+    }
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanEmail)) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Debes ingresar un correo valido.',
+      );
+      return state.errorMessage;
+    }
+    if (password.trim().length < 6) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'La contrasena debe tener al menos 6 caracteres.',
+      );
+      return state.errorMessage;
+    }
+    if (cleanMunicipalidadId.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Selecciona una municipalidad valida.',
+      );
+      return state.errorMessage;
+    }
+
+    final result = await _dataSource.createAdminUser(
+      nombre: cleanNombre,
+      email: cleanEmail,
+      password: password,
+      municipalidadId: cleanMunicipalidadId,
+      mercadoId: mercadoId,
+    );
+
+    return result.fold(
+      (failure) {
+        state = state.copyWith(isLoading: false, errorMessage: failure.message);
+        return failure.message;
+      },
+      (_) async {
+        await selectSection('usuarios');
+        return null;
+      },
+    );
   }
 }
 

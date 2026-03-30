@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/qrecauda_section.dart';
+import '../config/qrecauda_collection_form_registry.dart';
+import '../mappers/qrecauda_collection_payload_mapper.dart';
 import '../viewmodels/qrecauda_dashboard_viewmodel.dart';
 import '../widgets/qrecauda_sidebar.dart';
 import '../../../shared/presentation/widgets/dynamic_data_table.dart';
@@ -533,12 +535,54 @@ class _QRecaudaDashboardScreenState
               .selectSection(state.activeSection);
         }),
         const SizedBox(width: 12),
+        if (state.activeSection == 'usuarios' && !isMobile)
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: OutlinedButton.icon(
+              onPressed: state.isLoading
+                  ? null
+                  : () => _showCreateAdminDialog(),
+              icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
+              label: Text(
+                'Crear Admin',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF1E3A8A),
+                side: const BorderSide(color: Color(0xFF93C5FD)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
         if (isMobile)
-          IconButton(
-            onPressed: state.isLoading ? null : () => _showCreateDialog(state),
-            icon: const Icon(Icons.add_circle_rounded, size: 28),
-            color: const Color(0xFFD97706),
-            tooltip: 'Crear Documento',
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (state.activeSection == 'usuarios')
+                IconButton(
+                  onPressed: state.isLoading ? null : _showCreateAdminDialog,
+                  icon: const Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 24,
+                  ),
+                  color: const Color(0xFF1E3A8A),
+                  tooltip: 'Crear Admin',
+                ),
+              IconButton(
+                onPressed: state.isLoading
+                    ? null
+                    : () => _showCreateDialog(state),
+                icon: const Icon(Icons.add_circle_rounded, size: 28),
+                color: const Color(0xFFD97706),
+                tooltip: 'Crear Documento',
+              ),
+            ],
           )
         else
           ElevatedButton.icon(
@@ -775,12 +819,17 @@ class _QRecaudaDashboardScreenState
   }
 
   Future<void> _showCreateDialog(QRecaudaDashboardState state) async {
+    final sectionId = state.activeSection;
     final template = state.data.isNotEmpty
         ? state.data.first
         : <String, dynamic>{};
-    final initialData = <String, dynamic>{};
+
+    final initialData = <String, dynamic>{
+      ...QRecaudaCollectionFormRegistry.baseFieldsForSection(sectionId),
+    };
     for (final key in template.keys) {
       if (key == 'id') continue;
+      if (initialData.containsKey(key)) continue;
       if (template[key] is int) {
         initialData[key] = 0;
       } else if (template[key] is double) {
@@ -791,6 +840,15 @@ class _QRecaudaDashboardScreenState
         initialData[key] = '';
       }
     }
+    final fieldSchemas = QRecaudaCollectionFormRegistry.buildFieldSchemas(
+      sectionId: sectionId,
+      state: state,
+    );
+    final hiddenFields =
+        QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
+          sectionId,
+          isEdit: false,
+        );
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -799,13 +857,20 @@ class _QRecaudaDashboardScreenState
         initialData: initialData,
         isEdit: false,
         title: 'Crear en ${state.activeSectionLabel}',
+        fieldSchemas: fieldSchemas.isEmpty ? null : fieldSchemas,
+        hiddenFields: hiddenFields,
       ),
     );
 
     if (result != null && mounted) {
+      final payload = QRecaudaCollectionPayloadMapper.fromFormToApi(
+        sectionId: sectionId,
+        state: state,
+        formData: result,
+      );
       final error = await ref
           .read(qrecaudaDashboardProvider.notifier)
-          .createItem(result);
+          .createItem(payload);
       if (mounted) {
         if (error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -823,14 +888,203 @@ class _QRecaudaDashboardScreenState
     }
   }
 
+  Future<void> _showCreateAdminDialog() async {
+    final state = ref.read(qrecaudaDashboardProvider);
+    if (state.selectedMunicipalidades.length != 1) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Selecciona exactamente 1 municipalidad de contexto para crear el admin.',
+          ),
+          backgroundColor: Color(0xFFB45309),
+        ),
+      );
+      return;
+    }
+
+    final municipalidad = state.selectedMunicipalidades.first;
+    final municipalidadId = municipalidad['id']?.toString().trim() ?? '';
+    if (municipalidadId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La municipalidad seleccionada no tiene ID valido.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+
+    final nombreCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    bool showPassword = false;
+    String? mercadoId;
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocalState) => AlertDialog(
+          title: Text(
+            'Crear Admin [DEV]',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+          ),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Municipalidad: ${municipalidad['nombre'] ?? municipalidad['name'] ?? municipalidadId}',
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    color: const Color(0xFF334155),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre completo',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passCtrl,
+                  obscureText: !showPassword,
+                  decoration: InputDecoration(
+                    labelText: 'Contrasena',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      onPressed: () =>
+                          setLocalState(() => showPassword = !showPassword),
+                      icon: Icon(
+                        showPassword ? Icons.visibility_off : Icons.visibility,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: mercadoId,
+                  decoration: const InputDecoration(
+                    labelText: 'Mercado (opcional)',
+                    prefixIcon: Icon(Icons.storefront_outlined),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Sin mercado'),
+                    ),
+                    ...state.mercadoNames.entries.map(
+                      (entry) => DropdownMenuItem<String?>(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => mercadoId = value,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '* Esta accion crea usuario en Auth y documento en usuarios.',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                final error = await ref
+                    .read(qrecaudaDashboardProvider.notifier)
+                    .createAdminUser(
+                      nombre: nombreCtrl.text,
+                      email: emailCtrl.text,
+                      password: passCtrl.text,
+                      municipalidadId: municipalidadId,
+                      mercadoId: mercadoId,
+                    );
+                if (!ctx.mounted) return;
+                if (error != null) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text(error),
+                      backgroundColor: const Color(0xFFDC2626),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              icon: const Icon(Icons.admin_panel_settings_rounded),
+              label: const Text('Crear Admin'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nombreCtrl.dispose();
+    emailCtrl.dispose();
+    passCtrl.dispose();
+
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Admin creado exitosamente.'),
+          backgroundColor: Color(0xFFD97706),
+        ),
+      );
+    }
+  }
+
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
+    final state = ref.read(qrecaudaDashboardProvider);
+    final sectionId = state.activeSection;
+    final formData = QRecaudaCollectionPayloadMapper.fromApiToForm(
+      sectionId: sectionId,
+      row: row,
+    );
+    final fieldSchemas = QRecaudaCollectionFormRegistry.buildFieldSchemas(
+      sectionId: sectionId,
+      state: state,
+    );
+    final hiddenFields =
+        QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
+          sectionId,
+          isEdit: true,
+        );
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
       builder: (_) => DynamicFormDialog(
-        initialData: row,
+        initialData: formData,
         isEdit: true,
         title: 'Editar Documento',
+        fieldSchemas: fieldSchemas.isEmpty ? null : fieldSchemas,
+        hiddenFields: hiddenFields,
       ),
     );
 
@@ -843,9 +1097,15 @@ class _QRecaudaDashboardScreenState
         return;
       }
 
+      final payload = QRecaudaCollectionPayloadMapper.fromFormToApi(
+        sectionId: sectionId,
+        state: state,
+        formData: result,
+      );
+
       final error = await ref
           .read(qrecaudaDashboardProvider.notifier)
-          .updateItem(id, result);
+          .updateItem(id, payload);
       if (mounted) {
         if (error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
