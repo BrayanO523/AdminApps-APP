@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../app/di/network_provider.dart';
 
 import '../../domain/entities/epd_section.dart';
+import '../../data/services/epd_catalog_excel_service.dart';
 import '../config/epd_collection_form_registry.dart';
 import '../mappers/epd_collection_payload_mapper.dart';
 import '../viewmodels/epd_dashboard_viewmodel.dart';
@@ -30,6 +31,7 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
   static const int _pageSize = 20;
   int _currentPage = 0;
   bool _isApplyingExpenseTemplates = false;
+  bool _isCatalogImportBusy = false;
 
   Future<String> _uploadImageToStorage(
     List<int> bytes,
@@ -166,6 +168,624 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         setState(() => _isApplyingExpenseTemplates = false);
       }
     }
+  }
+
+  String? _getSingleSelectedEmpresaId(EpdDashboardState state) {
+    if (state.selectedEmpresas.length != 1) return null;
+    final selected = state.selectedEmpresas.first;
+    for (final key in const ['empresaId', 'IdEmpresa', 'id', 'value']) {
+      final value = selected[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  Future<void> _handleCatalogExcelAction(
+    EpdDashboardState state,
+    String action,
+  ) async {
+    if (_isCatalogImportBusy) return;
+
+    final empresaId = _getSingleSelectedEmpresaId(state);
+    if (empresaId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Debes seleccionar exactamente 1 empresa para usar Catalogo Excel.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCatalogImportBusy = true);
+    try {
+      if (action == 'download_template') {
+        await EpdCatalogExcelService.downloadTemplate();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Plantilla Excel descargada correctamente.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+
+      if (action == 'import_excel') {
+        final excelPayload =
+            await EpdCatalogExcelService.pickAndParseImportFile();
+        if (excelPayload == null) {
+          return;
+        }
+        final dataSource = ref.read(epdDataSourceProvider);
+        final previewResult = await dataSource.previewCatalogImport(
+          empresaId: empresaId,
+          templateVersion: excelPayload.templateVersion,
+          categories: excelPayload.categories,
+          products: excelPayload.products,
+        );
+
+        final previewData = previewResult.fold(
+          (failure) => null,
+          (data) => data,
+        );
+        if (previewData == null) {
+          final error = previewResult.fold(
+            (failure) => failure.message,
+            (_) => '',
+          );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        final previewModel = _CatalogImportPreviewModel.fromMap(previewData);
+        if (!mounted) return;
+
+        final decisions = await _showCatalogImportPreviewDialog(previewModel);
+        if (decisions == null) return;
+
+        final commitResult = await dataSource.commitCatalogImport(
+          empresaId: empresaId,
+          templateVersion: excelPayload.templateVersion,
+          draftToken: previewModel.draftToken,
+          categories: excelPayload.categories,
+          products: excelPayload.products,
+          conflictDecisions: decisions.conflictDecisions,
+          invalidPolicy: decisions.invalidPolicy,
+        );
+
+        final commitData = commitResult.fold((failure) => null, (data) => data);
+        if (commitData == null) {
+          final error = commitResult.fold(
+            (failure) => failure.message,
+            (_) => '',
+          );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+          return;
+        }
+
+        if (!mounted) return;
+        final success = commitData['success'] == true;
+        if (!success) {
+          final message =
+              commitData['message']?.toString() ??
+              'No se guardaron los datos del archivo.';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), backgroundColor: Colors.orange),
+          );
+          return;
+        }
+
+        final createdCounts =
+            (commitData['createdCounts'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+        final updatedCounts =
+            (commitData['updatedCounts'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+        final skippedCounts =
+            (commitData['skippedCounts'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+        final skippedTotal =
+            ((skippedCounts['categories'] ?? 0) as num).toInt() +
+            ((skippedCounts['products'] ?? 0) as num).toInt();
+        final summaryText =
+            'Importacion completada. '
+            'Categorias +${createdCounts['categories'] ?? 0}/~${updatedCounts['categories'] ?? 0}, '
+            'Productos +${createdCounts['products'] ?? 0}/~${updatedCounts['products'] ?? 0}, '
+            'Omitidos $skippedTotal.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(summaryText), backgroundColor: Colors.green),
+        );
+
+        await ref
+            .read(epdDashboardProvider.notifier)
+            .refreshAfterExternalImport();
+      }
+    } on EpdCatalogExcelException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.orange),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error procesando Catalogo Excel: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isCatalogImportBusy = false);
+      }
+    }
+  }
+
+  Future<_CatalogImportDialogResult?> _showCatalogImportPreviewDialog(
+    _CatalogImportPreviewModel preview,
+  ) async {
+    final decisions = <String, String>{};
+    for (final row in preview.conflictRows) {
+      decisions[row.rowKey] = 'keep_existing';
+    }
+    var invalidPolicy = preview.invalidRows.isNotEmpty
+        ? 'abort_all'
+        : 'save_valid_only';
+
+    return showDialog<_CatalogImportDialogResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        final surface = isDark ? const Color(0xFF0F172A) : Colors.white;
+        final surfaceMuted = isDark
+            ? const Color(0xFF111827)
+            : const Color(0xFFF8FAFC);
+        final borderColor = isDark
+            ? const Color(0xFF334155)
+            : const Color(0xFFE2E8F0);
+        final textPrimary = isDark
+            ? const Color(0xFFF8FAFC)
+            : const Color(0xFF0F172A);
+        final textSecondary = isDark
+            ? const Color(0xFFCBD5E1)
+            : const Color(0xFF475569);
+
+        Widget metricCard({
+          required String label,
+          required int value,
+          required Color accent,
+        }) {
+          return Container(
+            constraints: const BoxConstraints(minWidth: 130),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: surfaceMuted,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value.toString(),
+                  style: GoogleFonts.outfit(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (context, setInnerState) {
+            return Dialog(
+              backgroundColor: surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 980,
+                  maxHeight: 760,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFF2563EB,
+                              ).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.table_view_rounded,
+                              color: Color(0xFF2563EB),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Preview de Importacion de Catalogo',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Revisa conflictos y filas invalidas antes de confirmar.',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    color: textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          metricCard(
+                            label: 'Categorias (total)',
+                            value: preview.categoriesSummary.total,
+                            accent: const Color(0xFF3B82F6),
+                          ),
+                          metricCard(
+                            label: 'Categorias nuevas',
+                            value: preview.categoriesSummary.newItems,
+                            accent: const Color(0xFF16A34A),
+                          ),
+                          metricCard(
+                            label: 'Conflictos cat.',
+                            value: preview.categoriesSummary.conflicts,
+                            accent: const Color(0xFFF59E0B),
+                          ),
+                          metricCard(
+                            label: 'Invalidas cat.',
+                            value: preview.categoriesSummary.invalid,
+                            accent: const Color(0xFFDC2626),
+                          ),
+                          metricCard(
+                            label: 'Productos (total)',
+                            value: preview.productsSummary.total,
+                            accent: const Color(0xFF3B82F6),
+                          ),
+                          metricCard(
+                            label: 'Productos nuevos',
+                            value: preview.productsSummary.newItems,
+                            accent: const Color(0xFF16A34A),
+                          ),
+                          metricCard(
+                            label: 'Conflictos prod.',
+                            value: preview.productsSummary.conflicts,
+                            accent: const Color(0xFFF59E0B),
+                          ),
+                          metricCard(
+                            label: 'Invalidos prod.',
+                            value: preview.productsSummary.invalid,
+                            accent: const Color(0xFFDC2626),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: surfaceMuted,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: borderColor),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (preview.conflictRows.isNotEmpty) ...[
+                                  Text(
+                                    'Conflictos detectados',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...preview.conflictRows.map((row) {
+                                    final currentDecision =
+                                        decisions[row.rowKey] ??
+                                        'keep_existing';
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFF59E0B,
+                                        ).withValues(alpha: 0.10),
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFFF59E0B,
+                                          ).withValues(alpha: 0.35),
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              '[${row.sheetLabel}] fila ${row.rowNumber} - ${row.displayName}',
+                                              style: GoogleFonts.outfit(
+                                                fontSize: 12,
+                                                color: textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          DropdownButton<String>(
+                                            value: currentDecision,
+                                            dropdownColor: surface,
+                                            onChanged: (value) {
+                                              if (value == null) return;
+                                              setInnerState(() {
+                                                decisions[row.rowKey] = value;
+                                              });
+                                            },
+                                            items: [
+                                              DropdownMenuItem(
+                                                value: 'keep_existing',
+                                                child: Text(
+                                                  'Conservar existente',
+                                                  style: GoogleFonts.outfit(
+                                                    color: textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                              DropdownMenuItem(
+                                                value: 'overwrite',
+                                                child: Text(
+                                                  'Sobrescribir',
+                                                  style: GoogleFonts.outfit(
+                                                    color: textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                  const SizedBox(height: 12),
+                                ] else ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFF16A34A,
+                                      ).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF16A34A,
+                                        ).withValues(alpha: 0.30),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'No hay conflictos detectados.',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        color: textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (preview.invalidRows.isNotEmpty) ...[
+                                  Text(
+                                    'Filas invalidas',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...preview.invalidRows.map((row) {
+                                    final errors = row.errors.join(' | ');
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFDC2626,
+                                        ).withValues(alpha: 0.10),
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFFDC2626,
+                                          ).withValues(alpha: 0.35),
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '[${row.sheetLabel}] fila ${row.rowNumber} - ${row.displayName}\n$errors',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 12,
+                                          color: textPrimary,
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Politica para filas invalidas:',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: textPrimary,
+                                    ),
+                                  ),
+                                  RadioListTile<String>(
+                                    value: 'save_valid_only',
+                                    groupValue: invalidPolicy,
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFF2563EB),
+                                    title: Text(
+                                      'Guardar solo filas validas',
+                                      style: GoogleFonts.outfit(
+                                        color: textPrimary,
+                                      ),
+                                    ),
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setInnerState(
+                                        () => invalidPolicy = value,
+                                      );
+                                    },
+                                  ),
+                                  RadioListTile<String>(
+                                    value: 'abort_all',
+                                    groupValue: invalidPolicy,
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFF2563EB),
+                                    title: Text(
+                                      'No guardar nada',
+                                      style: GoogleFonts.outfit(
+                                        color: textPrimary,
+                                      ),
+                                    ),
+                                    onChanged: (value) {
+                                      if (value == null) return;
+                                      setInnerState(
+                                        () => invalidPolicy = value,
+                                      );
+                                    },
+                                  ),
+                                ] else ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFF16A34A,
+                                      ).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFF16A34A,
+                                        ).withValues(alpha: 0.30),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'No hay filas invalidas. Se puede confirmar la importacion.',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        color: textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              'Cancelar',
+                              style: GoogleFonts.outfit(
+                                color: textSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(
+                                context,
+                                _CatalogImportDialogResult(
+                                  conflictDecisions: decisions,
+                                  invalidPolicy: invalidPolicy,
+                                ),
+                              );
+                            },
+                            child: Text(
+                              'Confirmar Importacion',
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _clearFilters() {
@@ -413,6 +1033,10 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
         !_isApplyingExpenseTemplates;
     final canCreate =
         !_isCreateDisabled(state.activeSection) && !state.isLoading;
+    final canUseCatalogExcel =
+        !state.isLoading &&
+        !_isCatalogImportBusy &&
+        _getSingleSelectedEmpresaId(state) != null;
     final content = Row(
       children: [
         if (isMobile)
@@ -658,6 +1282,75 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
               .read(epdDashboardProvider.notifier)
               .selectSection(state.activeSection);
         }),
+        const SizedBox(width: 12),
+        PopupMenuButton<String>(
+          enabled: canUseCatalogExcel,
+          onSelected: (value) {
+            unawaited(_handleCatalogExcelAction(state, value));
+          },
+          tooltip: canUseCatalogExcel
+              ? 'Catalogo Excel'
+              : 'Selecciona 1 empresa para habilitar Catalogo Excel',
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'download_template',
+              child: Text('Descargar plantilla'),
+            ),
+            PopupMenuItem(value: 'import_excel', child: Text('Importar Excel')),
+          ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: canUseCatalogExcel
+                  ? Colors.white
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: canUseCatalogExcel
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isCatalogImportBusy)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Icon(
+                    Icons.table_view_rounded,
+                    size: 16,
+                    color: canUseCatalogExcel
+                        ? const Color(0xFF334155)
+                        : const Color(0xFF94A3B8),
+                  ),
+                const SizedBox(width: 8),
+                Text(
+                  isMobile ? 'Excel' : 'Catalogo Excel',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: canUseCatalogExcel
+                        ? const Color(0xFF334155)
+                        : const Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: canUseCatalogExcel
+                      ? const Color(0xFF334155)
+                      : const Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ),
+        ),
         const SizedBox(width: 12),
         if (isMobile)
           if (isExpenseTemplateSection)
@@ -2330,4 +3023,151 @@ class _EpdDashboardScreenState extends ConsumerState<EpdDashboardScreen> {
       ),
     );
   }
+}
+
+class _CatalogImportSummary {
+  final int total;
+  final int newItems;
+  final int conflicts;
+  final int invalid;
+
+  const _CatalogImportSummary({
+    required this.total,
+    required this.newItems,
+    required this.conflicts,
+    required this.invalid,
+  });
+
+  factory _CatalogImportSummary.fromMap(Map<String, dynamic> map) {
+    int toInt(dynamic value) => (value is num) ? value.toInt() : 0;
+    return _CatalogImportSummary(
+      total: toInt(map['total']),
+      newItems: toInt(map['new']),
+      conflicts: toInt(map['conflict']),
+      invalid: toInt(map['invalid']),
+    );
+  }
+}
+
+class _CatalogImportPreviewRow {
+  final String rowKey;
+  final int rowNumber;
+  final String sheet;
+  final String displayName;
+  final String status;
+  final List<String> errors;
+
+  const _CatalogImportPreviewRow({
+    required this.rowKey,
+    required this.rowNumber,
+    required this.sheet,
+    required this.displayName,
+    required this.status,
+    required this.errors,
+  });
+
+  String get sheetLabel => sheet == 'categories' ? 'Categorias' : 'Productos';
+  bool get isConflict => status == 'conflict';
+  bool get isInvalid => status == 'invalid';
+
+  factory _CatalogImportPreviewRow.fromMap(
+    Map<String, dynamic> map,
+    String sheet,
+  ) {
+    int toInt(dynamic value) => (value is num) ? value.toInt() : 0;
+    final displayName = sheet == 'categories'
+        ? (map['NombreCategoria']?.toString() ?? '')
+        : (map['NombreProducto']?.toString() ?? '');
+    final errorsRaw = map['errors'];
+    final errors = errorsRaw is List
+        ? errorsRaw.map((e) => e.toString()).toList()
+        : const <String>[];
+    return _CatalogImportPreviewRow(
+      rowKey: map['rowKey']?.toString() ?? '',
+      rowNumber: toInt(map['rowNumber']),
+      sheet: sheet,
+      displayName: displayName.trim().isEmpty ? 'Sin nombre' : displayName,
+      status: map['status']?.toString() ?? 'new',
+      errors: errors,
+    );
+  }
+}
+
+class _CatalogImportPreviewModel {
+  final String draftToken;
+  final _CatalogImportSummary categoriesSummary;
+  final _CatalogImportSummary productsSummary;
+  final List<_CatalogImportPreviewRow> rows;
+
+  const _CatalogImportPreviewModel({
+    required this.draftToken,
+    required this.categoriesSummary,
+    required this.productsSummary,
+    required this.rows,
+  });
+
+  List<_CatalogImportPreviewRow> get conflictRows =>
+      rows.where((r) => r.isConflict).toList();
+
+  List<_CatalogImportPreviewRow> get invalidRows =>
+      rows.where((r) => r.isInvalid).toList();
+
+  factory _CatalogImportPreviewModel.fromMap(Map<String, dynamic> map) {
+    final summaryMap =
+        (map['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final categoriesMap =
+        (summaryMap['categories'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final productsMap =
+        (summaryMap['products'] as Map?)?.cast<String, dynamic>() ?? const {};
+
+    final rows = <_CatalogImportPreviewRow>[];
+    final categoriesRows = map['categories'];
+    if (categoriesRows is List) {
+      for (final raw in categoriesRows) {
+        if (raw is Map<String, dynamic>) {
+          rows.add(_CatalogImportPreviewRow.fromMap(raw, 'categories'));
+        } else if (raw is Map) {
+          rows.add(
+            _CatalogImportPreviewRow.fromMap(
+              raw.map((k, v) => MapEntry(k.toString(), v)),
+              'categories',
+            ),
+          );
+        }
+      }
+    }
+
+    final productRows = map['products'];
+    if (productRows is List) {
+      for (final raw in productRows) {
+        if (raw is Map<String, dynamic>) {
+          rows.add(_CatalogImportPreviewRow.fromMap(raw, 'products'));
+        } else if (raw is Map) {
+          rows.add(
+            _CatalogImportPreviewRow.fromMap(
+              raw.map((k, v) => MapEntry(k.toString(), v)),
+              'products',
+            ),
+          );
+        }
+      }
+    }
+
+    return _CatalogImportPreviewModel(
+      draftToken: map['draftToken']?.toString() ?? '',
+      categoriesSummary: _CatalogImportSummary.fromMap(categoriesMap),
+      productsSummary: _CatalogImportSummary.fromMap(productsMap),
+      rows: rows,
+    );
+  }
+}
+
+class _CatalogImportDialogResult {
+  final Map<String, String> conflictDecisions;
+  final String invalidPolicy;
+
+  const _CatalogImportDialogResult({
+    required this.conflictDecisions,
+    required this.invalidPolicy,
+  });
 }

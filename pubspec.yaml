@@ -24,6 +24,9 @@ dependencies:
   dropdown_search: ^6.0.2
   image_picker: ^1.2.1
   firebase_storage: ^13.1.0
+  excel: ^4.0.6
+  file_picker: ^8.1.2
+  file_saver: ^0.2.14
 
 dev_dependencies:
   flutter_test:
