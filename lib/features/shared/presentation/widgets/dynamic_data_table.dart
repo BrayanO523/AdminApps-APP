@@ -77,6 +77,21 @@ class _Styles {
   );
 }
 
+Image _buildNetworkImage(
+  String url, {
+  BoxFit fit = BoxFit.contain,
+  Widget Function(BuildContext, Object, StackTrace?)? errorBuilder,
+}) {
+  return Image.network(
+    url,
+    fit: fit,
+    webHtmlElementStrategy: kIsWeb
+        ? WebHtmlElementStrategy.prefer
+        : WebHtmlElementStrategy.never,
+    errorBuilder: errorBuilder,
+  );
+}
+
 /// Tabla dinámica optimizada con styles cacheados y rebuilds mínimos.
 class DynamicDataTable extends StatefulWidget {
   final List<Map<String, dynamic>> data;
@@ -539,16 +554,147 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(7),
-              child: Image.network(
+              child: _buildNetworkImage(
                 url,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.broken_image_rounded,
-                  size: 18,
-                  color: Color(0xFF94A3B8),
-                ),
+                errorBuilder: (_, __, ___) {
+                  debugPrint('No se pudo cargar la imagen: $url');
+                  return Tooltip(
+                    message: url,
+                    child: Container(
+                      color: const Color(0xFFF8FAFC),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.broken_image_rounded,
+                        size: 18,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isImageUrl(String value) {
+    final raw = value.trim().toLowerCase();
+    return raw.startsWith('http://') || raw.startsWith('https://');
+  }
+
+  Widget _imageListCell(List<dynamic> list) {
+    final urls = list
+        .map((item) => item?.toString().trim() ?? '')
+        .where((url) => url.isNotEmpty && _isImageUrl(url))
+        .toList();
+
+    if (urls.isEmpty) return Text('—', style: _Styles.cellMuted);
+
+    final visibleUrls = urls.take(3).toList();
+    final overflow = urls.length - visibleUrls.length;
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        ...visibleUrls.map(_imageCell),
+        if (overflow > 0)
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _showImageGallery(urls),
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              alignment: Alignment.center,
+              child: Text('+$overflow', style: _Styles.viewBtn),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showImageGallery(List<String> urls) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 620),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Galería de fotos',
+                        style: _Styles.dialogTitle,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1,
+                  ),
+                  itemCount: urls.length,
+                  itemBuilder: (context, index) {
+                    final url = urls[index];
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _showFullImage(ctx, url),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(11),
+                          child: _buildNetworkImage(
+                            url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Tooltip(
+                              message: url,
+                              child: const Center(
+                                child: Icon(
+                                  Icons.broken_image_rounded,
+                                  color: Color(0xFF94A3B8),
+                                  size: 28,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -932,7 +1078,7 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
             child: InteractiveViewer(
               minScale: 0.5,
               maxScale: 4.0,
-              child: Image.network(
+              child: _buildNetworkImage(
                 url,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => Column(
@@ -1099,7 +1245,7 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
+                        child: _buildNetworkImage(
                           imageUrl,
                           fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => Container(
@@ -1198,6 +1344,11 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
 
   Widget _listCell(String field, List<dynamic> list) {
     if (list.isEmpty) return Text('—', style: _Styles.cellMuted);
+
+    final listStrings = list.map((item) => item?.toString().trim() ?? '').toList();
+    if (listStrings.isNotEmpty && listStrings.every(_isImageUrl)) {
+      return _imageListCell(list);
+    }
 
     if (list.any((item) => item is Map)) {
       return InkWell(
