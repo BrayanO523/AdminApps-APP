@@ -27,6 +27,10 @@ class QRecaudaCollectionFormRegistry {
     final hidden = List<String>.from(_baseHiddenSystemFields)
       ..addAll(['creadoEn', 'actualizadoEn', 'creadoPor', 'actualizadoPor']);
 
+    if (sectionId == 'locales') {
+      hidden.add('codigoCatastral');
+    }
+
     if (isEdit && sectionId == 'cobros') {
       hidden.addAll(['municipalidadId', 'mercadoId', 'localId', 'cobradorId']);
     }
@@ -66,8 +70,9 @@ class QRecaudaCollectionFormRegistry {
             label: 'Fecha Referencia Mora',
           ),
           'logo': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Logo URL',
+            type: DynamicFormFieldType.imageUpload,
+            label: 'Logo',
+            storagePath: 'qrecauda/municipalidades/{id}/{timestamp}.jpg',
           ),
           'activa': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.boolean,
@@ -127,9 +132,10 @@ class QRecaudaCollectionFormRegistry {
             isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
-          'tipoNegocioId': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Tipo Negocio ID',
+          'tipoNegocioId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Tipo de Negocio',
+            optionsResolver: () => _toDropdownOptions(state.tipoNegocioNames),
           ),
           'representante': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
@@ -177,11 +183,7 @@ class QRecaudaCollectionFormRegistry {
           ),
           'codigo': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
-            label: 'Codigo',
-          ),
-          'codigoCatastral': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Codigo Catastral',
+            label: 'Codigo Local (Puesto)',
           ),
           'clave': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
@@ -220,10 +222,11 @@ class QRecaudaCollectionFormRegistry {
             isRequired: true,
             optionsResolver: () => _toDropdownOptions(state.municipalidadNames),
           ),
-          'localId': const DynamicFormFieldSchema(
-            type: DynamicFormFieldType.text,
-            label: 'Local ID',
+          'localId': DynamicFormFieldSchema(
+            type: DynamicFormFieldType.dropdown,
+            label: 'Local',
             isRequired: true,
+            optionsResolver: () => _toDropdownOptions(state.localNames),
           ),
           'estado': const DynamicFormFieldSchema(
             type: DynamicFormFieldType.text,
@@ -399,7 +402,6 @@ class QRecaudaCollectionFormRegistry {
           'saldoAFavor': 0.0,
           'deudaAcumulada': 0.0,
           'codigo': '',
-          'codigoCatastral': '',
           'clave': '',
           'activo': true,
         };

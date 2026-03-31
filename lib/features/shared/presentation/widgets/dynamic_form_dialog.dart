@@ -1,11 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart' as latlng;
 
+import '../../data/services/browser_geolocation_stub.dart'
+    if (dart.library.html) '../../data/services/browser_geolocation_web.dart'
+    as browser_geo;
 import 'dynamic_form_field_schema.dart';
 
 class DynamicFormDialog extends StatefulWidget {
@@ -14,13 +23,13 @@ class DynamicFormDialog extends StatefulWidget {
   final String title;
   final Map<String, DynamicFormFieldSchema>? fieldSchemas;
 
-  /// Campos que deben omitirse visualmente pero cuyo valor se envía al guardado.
-  /// Usados para campos de contexto automático (empresaId, sucursalId, etc.)
+  /// Campos que deben omitirse visualmente pero cuyo valor se envÃ­a al guardado.
+  /// Usados para campos de contexto automÃ¡tico (empresaId, sucursalId, etc.)
   /// y campos de sistema (activo, last_modified, SYNC_STATUS, etc.).
   final List<String> hiddenFields;
 
   /// Callback para subir una imagen. Recibe los bytes y la ruta de Storage.
-  /// Debe devolver la URL de descarga. Si es null, el botón de subida no aparece.
+  /// Debe devolver la URL de descarga. Si es null, el botÃ³n de subida no aparece.
   final Future<String> Function(List<int> bytes, String storagePath)?
   onUploadImage;
 
@@ -67,26 +76,37 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'promo_price',
     'promo_price_lb',
   };
+  static const Set<String> _latitudeFieldKeys = {'latitud', 'latitude', 'lat'};
+  static const Set<String> _longitudeFieldKeys = {
+    'longitud',
+    'longitude',
+    'lng',
+    'lon',
+  };
   static const Color _accentColor = Color(0xFF4F46E5);
   static const Color _labelColor = Color(0xFF334155);
   static const Color _inputTextColor = Color(0xFF0F172A);
   static const Color _inputBorderColor = Color(0xFFCBD5E1);
 
-  /// Campos detectados como JSON arrays (String → List).
+  /// Campos detectados como JSON arrays (String â†’ List).
   /// Clave: fieldName, Valor: lista mutable de items.
   final Map<String, List<String>> _jsonArrayFields = {};
   final Map<String, Map<String, TextEditingController>> _mapNumberFields = {};
 
-  /// Controller temporal para añadir un nuevo item a un JSON array field.
+  /// Controller temporal para aÃ±adir un nuevo item a un JSON array field.
   final Map<String, TextEditingController> _arrayAddControllers = {};
   final Map<String, TextEditingController> _mapKeyAddControllers = {};
 
-  /// Imágenes seleccionadas localmente que se subirán al presionar Guardar.
+  /// ImÃ¡genes seleccionadas localmente que se subirÃ¡n al presionar Guardar.
   final Map<String, Uint8List> _pendingImageBytes = {};
   final Set<String> _autoSaleModeListenerKeys = {};
   String? _activeSaleModeKey;
 
   bool _isUploading = false;
+  latlng.LatLng? _deviceLocationCenter;
+  bool _isResolvingDeviceLocation = false;
+  String? _locationFailureHint;
+  final MapController _geoMapController = MapController();
 
   @override
   void initState() {
@@ -98,7 +118,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       final key = entry.key;
       final value = entry.value;
 
-      // Si el valor es una Lista directa → no editar (objetos complejos)
+      // Si el valor es una Lista directa â†’ no editar (objetos complejos)
       if (value is Map) {
         final mapControllers = <String, TextEditingController>{};
         for (final mapEntry in value.entries) {
@@ -111,7 +131,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         continue;
       }
 
-      // Si el valor es un String que se parece a un JSON array → tratar especial
+      // Si el valor es un String que se parece a un JSON array â†’ tratar especial
       if (value is String &&
           value.trim().startsWith('[') &&
           value.trim().endsWith(']')) {
@@ -123,11 +143,11 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             continue; // No crear TextEditingController para este campo
           }
         } catch (_) {
-          // No es JSON válido, tratar como string normal
+          // No es JSON vÃ¡lido, tratar como string normal
         }
       }
 
-      // Si el valor es una Lista nativa → tratar como campo array editable.
+      // Si el valor es una Lista nativa â†’ tratar como campo array editable.
       if (value is List) {
         _jsonArrayFields[key] = value.map((e) => e.toString()).toList();
         _arrayAddControllers[key] = TextEditingController();
@@ -138,6 +158,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     }
 
     _configureAutoSaleModeCalculation();
+    _primeDeviceLocationCenter();
   }
 
   @override
@@ -247,7 +268,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return normalized == '1' ||
         normalized == 'true' ||
         normalized == 'si' ||
-        normalized == 'sí' ||
+        normalized == 'sÃ­' ||
         normalized == 'yes';
   }
 
@@ -261,6 +282,244 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     return allFieldKeys
         .where((fieldKey) => !_promoPriceFieldKeys.contains(fieldKey))
         .toList();
+  }
+
+  bool _isLatitudeKey(String key) =>
+      _latitudeFieldKeys.contains(key.trim().toLowerCase());
+
+  bool _isLongitudeKey(String key) =>
+      _longitudeFieldKeys.contains(key.trim().toLowerCase());
+
+  String? _findLongitudePairKey(String latitudeKey) {
+    const latitudeToLongitude = {
+      'latitud': 'longitud',
+      'latitude': 'longitude',
+      'lat': 'lng',
+    };
+    final normalized = latitudeKey.trim().toLowerCase();
+    final pair = latitudeToLongitude[normalized];
+    if (pair == null || !_controllers.containsKey(pair)) return null;
+    return pair;
+  }
+
+  List<String> _collapseGeoPairKeys(List<String> keys) {
+    final visibleSet = keys.toSet();
+    final collapsed = <String>[];
+
+    for (final key in keys) {
+      if (_isLongitudeKey(key)) {
+        final isPairedLongitud =
+            key.trim().toLowerCase() == 'longitud' &&
+            visibleSet.contains('latitud');
+        final isPairedLongitude =
+            key.trim().toLowerCase() == 'longitude' &&
+            visibleSet.contains('latitude');
+        final isPairedLng =
+            key.trim().toLowerCase() == 'lng' && visibleSet.contains('lat');
+        if (isPairedLongitud || isPairedLongitude || isPairedLng) {
+          continue;
+        }
+      }
+      collapsed.add(key);
+    }
+    return collapsed;
+  }
+
+  double? _parseCoordinate(String raw) {
+    final text = raw.trim().replaceAll(',', '.');
+    if (text.isEmpty) return null;
+    return double.tryParse(text);
+  }
+
+  Future<void> _primeDeviceLocationCenter() async {
+    await _resolveCurrentLocationCenter();
+  }
+
+  void _centerMapOn(latlng.LatLng center, {double zoom = 16}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        _geoMapController.move(center, zoom);
+      } catch (_) {
+        // El controlador puede no estar adjunto en el primer frame.
+      }
+    });
+  }
+
+  Future<latlng.LatLng?> _resolveCurrentLocationCenter() async {
+    if (_isResolvingDeviceLocation) {
+      // Evita retornar null "silencioso" si el usuario presiona mientras ya
+      // se esta resolviendo la ubicacion en segundo plano.
+      for (var i = 0; i < 30; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if (!_isResolvingDeviceLocation) break;
+      }
+      if (_deviceLocationCenter == null &&
+          (_locationFailureHint == null || _locationFailureHint!.isEmpty)) {
+        _locationFailureHint =
+            'No se pudo obtener ubicacion actual. Reintenta en unos segundos.';
+      }
+      return _deviceLocationCenter;
+    }
+    _isResolvingDeviceLocation = true;
+    try {
+      if (kIsWeb) {
+        final base = Uri.base;
+        final isLocalhost =
+            base.host == 'localhost' ||
+            base.host == '127.0.0.1' ||
+            base.host == '::1';
+        final isSecureContext = base.scheme == 'https' || isLocalhost;
+        if (!isSecureContext) {
+          _locationFailureHint =
+              'Geolocalizacion bloqueada en ${base.scheme}://${base.host}. '
+              'Usa https:// o http://localhost.';
+          return await _resolveLastKnownLocationCenter();
+        }
+
+        // En web priorizamos API nativa del navegador para no depender del
+        // registro de plugins en modo debug.
+        final browserPosition = await browser_geo.getCurrentBrowserPosition(
+          timeout: const Duration(seconds: 12),
+        );
+        if (browserPosition != null) {
+          final center = latlng.LatLng(
+            browserPosition.latitude,
+            browserPosition.longitude,
+          );
+          if (mounted) {
+            setState(() {
+              _deviceLocationCenter = center;
+              _locationFailureHint = null;
+            });
+          } else {
+            _deviceLocationCenter = center;
+            _locationFailureHint = null;
+          }
+          return center;
+        }
+      }
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _locationFailureHint =
+            'El servicio de ubicacion del dispositivo esta apagado.';
+        return await _resolveLastKnownLocationCenter();
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _locationFailureHint = 'Permiso de ubicacion denegado para este sitio.';
+        return await _resolveLastKnownLocationCenter();
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+      final center = latlng.LatLng(position.latitude, position.longitude);
+      if (mounted) {
+        setState(() {
+          _deviceLocationCenter = center;
+          _locationFailureHint = null;
+        });
+      } else {
+        _deviceLocationCenter = center;
+        _locationFailureHint = null;
+      }
+      return center;
+    } on TimeoutException {
+      _locationFailureHint =
+          'No se obtuvo ubicacion a tiempo. Verifica GPS/permisos y reintenta.';
+      return await _resolveLastKnownLocationCenter();
+    } on MissingPluginException {
+      final fallback = await browser_geo.getCurrentBrowserPosition(
+        timeout: const Duration(seconds: 12),
+      );
+      if (fallback != null) {
+        final center = latlng.LatLng(fallback.latitude, fallback.longitude);
+        if (mounted) {
+          setState(() {
+            _deviceLocationCenter = center;
+            _locationFailureHint = null;
+          });
+        } else {
+          _deviceLocationCenter = center;
+          _locationFailureHint = null;
+        }
+        return center;
+      }
+      _locationFailureHint =
+          'No se pudo usar geolocalizacion en navegador. Verifica permiso del sitio.';
+      return await _resolveLastKnownLocationCenter();
+    } on LocationServiceDisabledException {
+      _locationFailureHint =
+          'La ubicacion del dispositivo esta desactivada en el sistema.';
+      return await _resolveLastKnownLocationCenter();
+    } catch (_) {
+      _locationFailureHint = await _buildLocationFailureHintFromState();
+      final last = await _resolveLastKnownLocationCenter();
+      if (last == null &&
+          (_locationFailureHint == null || _locationFailureHint!.isEmpty)) {
+        _locationFailureHint =
+            'No se pudo obtener ubicacion actual. Verifica permisos del navegador y del sistema.';
+      }
+      return last;
+    } finally {
+      _isResolvingDeviceLocation = false;
+    }
+  }
+
+  Future<String> _buildLocationFailureHintFromState() async {
+    if (kIsWeb) {
+      final base = Uri.base;
+      final isLocalhost =
+          base.host == 'localhost' ||
+          base.host == '127.0.0.1' ||
+          base.host == '::1';
+      final isSecureContext = base.scheme == 'https' || isLocalhost;
+      if (!isSecureContext) {
+        return 'Geolocalizacion bloqueada en ${base.scheme}://${base.host}. '
+            'Usa https:// o http://localhost.';
+      }
+    }
+
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return 'El servicio de ubicacion del dispositivo esta apagado.';
+    }
+
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return 'El navegador no tiene permiso de ubicacion para este sitio.';
+    }
+
+    return 'No se pudo obtener ubicacion actual por una falla del navegador o del sistema.';
+  }
+
+  Future<latlng.LatLng?> _resolveLastKnownLocationCenter() async {
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last == null) return _deviceLocationCenter;
+      final center = latlng.LatLng(last.latitude, last.longitude);
+      if (mounted) {
+        setState(() {
+          _deviceLocationCenter = center;
+        });
+      } else {
+        _deviceLocationCenter = center;
+      }
+      return center;
+    } catch (_) {
+      return _deviceLocationCenter;
+    }
   }
 
   Future<void> _onSave() async {
@@ -287,7 +546,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         result[key] =
             lowercase == 'true' ||
             lowercase == '1' ||
-            lowercase == 'sí' ||
+            lowercase == 'sÃ­' ||
             lowercase == 'si';
       } else {
         result[key] = textValue;
@@ -295,7 +554,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     }
 
     // Campos JSON array: por defecto se serializan a JSON string para compatibilidad.
-    // Excepción: algunos campos deben persistirse como Array nativo en Firestore.
+    // ExcepciÃ³n: algunos campos deben persistirse como Array nativo en Firestore.
     for (final entry in _jsonArrayFields.entries) {
       if (_nativeArrayFields.contains(entry.key)) {
         result[entry.key] = List<String>.from(entry.value);
@@ -304,7 +563,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       }
     }
 
-    // Subir imágenes pendientes al guardar.
+    // Subir imÃ¡genes pendientes al guardar.
     for (final entry in _mapNumberFields.entries) {
       final values = <String, dynamic>{};
       for (final mapEntry in entry.value.entries) {
@@ -323,7 +582,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('La subida de imágenes no está disponible.'),
+            content: Text('La subida de imÃ¡genes no estÃ¡ disponible.'),
           ),
         );
         return;
@@ -428,21 +687,21 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'sucursal_ids': 'Sucursales',
     'IdSucursal': 'Sucursal',
     'IdSucursalesAsignadas': 'Sucursales Asignadas',
-    'selected_categories': 'Categorías Permitidas',
-    'allowed_categories': 'Categorías Permitidas',
+    'selected_categories': 'CategorÃ­as Permitidas',
+    'allowed_categories': 'CategorÃ­as Permitidas',
     'assigned_seller_ids': 'Vendedores Asignados',
     'seller_id': 'Vendedor',
     'Idvendedor': 'Vendedor',
     'IdUsuario': 'Usuario',
-    'CodigoUsuario': 'Código de Usuario',
+    'CodigoUsuario': 'CÃ³digo de Usuario',
     'Nombre': 'Nombre',
     'NombreCompleto': 'Nombre Completo',
     'nombreComercial': 'Nombre Comercial',
-    'razonSocial': 'Razón Social',
-    'telefono_contacto': 'Teléfono de Contacto',
-    'direccion_referencia': 'Dirección de Referencia',
-    'NombreCategoria': 'Categoría',
-    'IdCategoria': 'Categoría',
+    'razonSocial': 'RazÃ³n Social',
+    'telefono_contacto': 'TelÃ©fono de Contacto',
+    'direccion_referencia': 'DirecciÃ³n de Referencia',
+    'NombreCategoria': 'CategorÃ­a',
+    'IdCategoria': 'CategorÃ­a',
     'NombreProducto': 'Nombre del Producto',
     'IdProducto': 'Producto',
     'IdTipoGasto': 'Tipo de Gasto',
@@ -455,7 +714,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'IdCliente': 'Cliente',
     'IdProveedor': 'Proveedor',
     'IdInventario': 'Inventario',
-    'IdTransaccion': 'Transacción',
+    'IdTransaccion': 'TransacciÃ³n',
     'IdVenta': 'Venta',
     'Color': 'Color',
     'logoUrl': 'Logo',
@@ -463,14 +722,14 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     'ModoVventa': 'Modo de Venta',
     'esGlobal': 'Alcance del Proveedor',
     'activo': 'Estado',
-    'precios': 'Precios por Vehículo',
+    'precios': 'Precios por VehÃ­culo',
     'isActive': 'Estado',
-    'sync_status': 'Estado de Sincronización',
+    'sync_status': 'Estado de SincronizaciÃ³n',
     'monto': 'Monto',
     'amount': 'Monto',
     'fecha': 'Fecha',
     'date': 'Fecha',
-    'description': 'Descripción',
+    'description': 'DescripciÃ³n',
   };
 
   String _resolveFieldLabel(String key, {String? explicitLabel}) {
@@ -577,6 +836,18 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
   }
 
   Widget _buildFieldWidget(String key, DynamicFormFieldSchema? schema) {
+    if (_isLatitudeKey(key)) {
+      final longitudeKey = _findLongitudePairKey(key);
+      if (longitudeKey != null) {
+        return _buildGeoPickerField(
+          latitudeKey: key,
+          longitudeKey: longitudeKey,
+          latitudeSchema: schema,
+          longitudeSchema: widget.fieldSchemas?[longitudeKey],
+        );
+      }
+    }
+
     if (schema != null && schema.type == DynamicFormFieldType.number) {
       return _buildNumberField(key, schema);
     }
@@ -610,7 +881,8 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       return _buildImageUploadField(key, schema);
     }
 
-    if (schema != null && schema.type == DynamicFormFieldType.keyValueNumberMap) {
+    if (schema != null &&
+        schema.type == DynamicFormFieldType.keyValueNumberMap) {
       return _buildMapNumberField(key, schema);
     }
 
@@ -679,7 +951,9 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
       ..._jsonArrayFields.keys.where((k) => !hiddenSet.contains(k)),
       ..._mapNumberFields.keys.where((k) => !hiddenSet.contains(k)),
     ];
-    final visibleFieldKeys = _applyConditionalVisibility(allFieldKeys);
+    final visibleFieldKeys = _collapseGeoPairKeys(
+      _applyConditionalVisibility(allFieldKeys),
+    );
 
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth >= 1400
@@ -702,7 +976,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Header ──
+            // â”€â”€ Header â”€â”€
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               decoration: BoxDecoration(
@@ -745,7 +1019,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               ),
             ),
 
-            // ── Form Content ──
+            // â”€â”€ Form Content â”€â”€
             Expanded(
               child: Form(
                 key: _formKey,
@@ -753,7 +1027,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               ),
             ),
 
-            // ── Footer / Actions ──
+            // â”€â”€ Footer / Actions â”€â”€
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               decoration: BoxDecoration(
@@ -809,7 +1083,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  // ── Campo de texto estándar ──
+  // â”€â”€ Campo de texto estÃ¡ndar â”€â”€
   Widget _buildTextField(String key, DynamicFormFieldSchema? schema) {
     final controller = _controllers[key]!;
     final isReadOnly =
@@ -884,6 +1158,188 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
             }
             return null;
           },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGeoPickerField({
+    required String latitudeKey,
+    required String longitudeKey,
+    DynamicFormFieldSchema? latitudeSchema,
+    DynamicFormFieldSchema? longitudeSchema,
+  }) {
+    final latController = _controllers[latitudeKey]!;
+    final lngController = _controllers[longitudeKey]!;
+    final lat = _parseCoordinate(latController.text);
+    final lng = _parseCoordinate(lngController.text);
+    final hasCoordinates = lat != null && lng != null;
+    final fallbackCenter =
+        _deviceLocationCenter ?? const latlng.LatLng(14.6349, -90.5069);
+    final mapCenter = hasCoordinates ? latlng.LatLng(lat, lng) : fallbackCenter;
+    final isReadOnly =
+        (widget.isEdit && latitudeKey == 'id') ||
+        (latitudeSchema?.isReadOnly == true) ||
+        (longitudeSchema?.isReadOnly == true);
+    final isRequired =
+        latitudeSchema?.isRequired == true ||
+        longitudeSchema?.isRequired == true;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Ubicacion (Mapa)', style: _fieldLabelStyle()),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            height: 220,
+            child: FlutterMap(
+              mapController: _geoMapController,
+              options: MapOptions(
+                initialCenter: mapCenter,
+                initialZoom: hasCoordinates ? 16 : 13,
+                onTap: isReadOnly
+                    ? null
+                    : (_, point) {
+                        setState(() {
+                          latController.text = point.latitude.toStringAsFixed(
+                            6,
+                          );
+                          lngController.text = point.longitude.toStringAsFixed(
+                            6,
+                          );
+                        });
+                      },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.sapinf.adminapps',
+                ),
+                if (hasCoordinates)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: mapCenter,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.location_on_rounded,
+                          color: Color(0xFFDC2626),
+                          size: 36,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isReadOnly
+              ? 'Ubicacion bloqueada para edicion.'
+              : 'Haz click en el mapa para seleccionar latitud y longitud.',
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            color: const Color(0xFF64748B),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (!isReadOnly &&
+            _locationFailureHint != null &&
+            _locationFailureHint!.trim().isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            _locationFailureHint!,
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              color: const Color(0xFFB45309),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: isReadOnly
+                    ? null
+                    : () async {
+                        final center = await _resolveCurrentLocationCenter();
+                        if (center == null) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                _locationFailureHint ??
+                                    'No se pudo obtener tu ubicacion actual.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        _centerMapOn(center, zoom: 17);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Mapa centrado en tu ubicacion actual. Selecciona el punto exacto con click.',
+                            ),
+                          ),
+                        );
+                      },
+                icon: const Icon(Icons.my_location_rounded, size: 18),
+                label: const Text('Centrar mapa en mi ubicacion'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: latController,
+                readOnly: isReadOnly,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: GoogleFonts.outfit(fontSize: 14, color: _inputTextColor),
+                decoration: _fieldDecoration(hintText: 'Latitud'),
+                validator: (value) {
+                  final raw = value?.trim() ?? '';
+                  if (isRequired && raw.isEmpty) return 'Latitud requerida';
+                  if (raw.isNotEmpty && _parseCoordinate(raw) == null) {
+                    return 'Latitud invalida';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextFormField(
+                controller: lngController,
+                readOnly: isReadOnly,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: GoogleFonts.outfit(fontSize: 14, color: _inputTextColor),
+                decoration: _fieldDecoration(hintText: 'Longitud'),
+                validator: (value) {
+                  final raw = value?.trim() ?? '';
+                  if (isRequired && raw.isEmpty) return 'Longitud requerida';
+                  if (raw.isNotEmpty && _parseCoordinate(raw) == null) {
+                    return 'Longitud invalida';
+                  }
+                  return null;
+                },
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -1004,7 +1460,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  // ── Campo de JSON array editable con chips ──
+  // â”€â”€ Campo de JSON array editable con chips â”€â”€
   Widget _buildArrayField(String key) {
     final items = _jsonArrayFields[key]!;
     final addController = _arrayAddControllers[key]!;
@@ -1052,7 +1508,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
               ),
               child: items.isEmpty
                   ? Text(
-                      'Lista vacía — agrega elementos abajo',
+                      'Lista vacÃ­a â€” agrega elementos abajo',
                       style: GoogleFonts.outfit(
                         fontSize: 13,
                         color: const Color(0xFF64748B),
@@ -1147,7 +1603,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  // ── Combo Box Búsqueda de Única Selección ──
+  // â”€â”€ Combo Box BÃºsqueda de Ãšnica SelecciÃ³n â”€â”€
   Widget _buildMapNumberField(String key, DynamicFormFieldSchema schema) {
     final label = _resolveFieldLabel(key, explicitLabel: schema.label);
     final controllers = _mapNumberFields.putIfAbsent(key, () => {});
@@ -1180,7 +1636,10 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                 Text(label, style: _fieldLabelStyle()),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE0F2FE),
                     borderRadius: BorderRadius.circular(20),
@@ -1354,10 +1813,15 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
 
     return StatefulBuilder(
       builder: (context, setInnerState) {
-        final options = schema.resolveOptions().map((e) => Map<String, dynamic>.from(e)).toList();
+        final options = schema
+            .resolveOptions()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
         final currentValue = controller.text.trim();
         if (currentValue.isNotEmpty &&
-            !options.any((option) => option['value'].toString() == currentValue)) {
+            !options.any(
+              (option) => option['value'].toString() == currentValue,
+            )) {
           options.add({'value': currentValue, 'label': currentValue});
         }
 
@@ -1506,7 +1970,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                         color: _inputTextColor,
                       ),
                       decoration: _fieldDecoration(
-                        hintText: 'Nueva categoría...',
+                        hintText: 'Nueva categorÃ­a...',
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 10,
@@ -1520,7 +1984,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                     onPressed: addCustomOption,
                     icon: const Icon(Icons.add_circle_rounded),
                     color: _accentColor,
-                    tooltip: 'Agregar categoría',
+                    tooltip: 'Agregar categorÃ­a',
                   ),
                 ],
               ),
@@ -1531,10 +1995,10 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  // ── Combo Box de Selección Múltiple (Multiselect) ──
+  // â”€â”€ Combo Box de SelecciÃ³n MÃºltiple (Multiselect) â”€â”€
   Widget _buildMultiDropdownField(String key, DynamicFormFieldSchema schema) {
     if (!_jsonArrayFields.containsKey(key)) {
-      // Fallback seguro si por alguna razón no se parseó como JSON array list nativa en initState
+      // Fallback seguro si por alguna razÃ³n no se parseÃ³ como JSON array list nativa en initState
       _jsonArrayFields[key] = [];
     }
 
@@ -1566,7 +2030,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                'MÚLTIPLE',
+                'MÃšLTIPLE',
                 style: GoogleFonts.outfit(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -1728,14 +2192,14 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  // ── Radio Select (dropdown estático de opciones predefinidas texto/valor) ──
+  // â”€â”€ Radio Select (dropdown estÃ¡tico de opciones predefinidas texto/valor) â”€â”€
   Widget _buildRadioSelectField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
     final isReadOnly = widget.isEdit && (key == 'id') || schema.isReadOnly;
     final label = _resolveFieldLabel(key, explicitLabel: schema.label);
     final options = schema.options ?? [];
     String? currentVal = controller.text.isNotEmpty ? controller.text : null;
-    // Normalizar: si el valor guardado no está en el listado de values, resetear
+    // Normalizar: si el valor guardado no estÃ¡ en el listado de values, resetear
     if (currentVal != null &&
         !options.any((o) => o['value'].toString() == currentVal)) {
       currentVal = null;
@@ -1778,7 +2242,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
     );
   }
 
-  // ── Color Picker (swatch + campo de texto hex) ──
+  // â”€â”€ Color Picker (swatch + campo de texto hex) â”€â”€
   Widget _buildColorPickerField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
     final label = _resolveFieldLabel(key, explicitLabel: schema.label);
@@ -1904,7 +2368,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
         uri.host.isNotEmpty;
   }
 
-  // ── Image Upload (URL + nota de subida) ──
+  // â”€â”€ Image Upload (URL + nota de subida) â”€â”€
   Widget _buildImageUploadField(String key, DynamicFormFieldSchema schema) {
     final controller = _controllers[key]!;
     final label = _resolveFieldLabel(key, explicitLabel: schema.label);
@@ -1921,7 +2385,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
           children: [
             Text(label, style: _fieldLabelStyle()),
             const SizedBox(height: 6),
-            // Preview local pendiente (aún no subida) o URL ya guardada
+            // Preview local pendiente (aÃºn no subida) o URL ya guardada
             if (hasPendingLocal) ...[
               Container(
                 height: 96,
@@ -1985,7 +2449,7 @@ class _DynamicFormDialogState extends State<DynamicFormDialog> {
                     decoration: _fieldDecoration(
                       hintText: hasPendingLocal
                           ? 'Imagen lista para subir al guardar'
-                          : 'Selecciona una imagen con el botón',
+                          : 'Selecciona una imagen con el botÃ³n',
                       prefixIcon: const Icon(
                         Icons.image_rounded,
                         size: 18,

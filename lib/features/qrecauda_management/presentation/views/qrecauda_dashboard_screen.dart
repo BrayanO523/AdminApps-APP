@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/di/network_provider.dart';
 
 import '../../domain/entities/qrecauda_section.dart';
 import '../config/qrecauda_collection_form_registry.dart';
@@ -26,6 +31,46 @@ class _QRecaudaDashboardScreenState
   String _localSearchText = '';
   static const int _pageSize = 20;
   int _currentPage = 0;
+
+  Future<String> _uploadImageToStorage(
+    List<int> bytes,
+    String storagePath,
+  ) async {
+    try {
+      final response = await ref
+          .read(dioClientProvider)
+          .instance
+          .post(
+            '/municipalidad/upload-image',
+            data: {
+              'imageBase64': base64Encode(bytes),
+              'storagePath': storagePath,
+            },
+          )
+          .timeout(const Duration(seconds: 90));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        final url = (data is Map<String, dynamic>)
+            ? data['downloadUrl']?.toString()
+            : null;
+        if (url != null && url.isNotEmpty) return url;
+      }
+
+      throw Exception('La API no devolvio una URL valida de imagen.');
+    } on TimeoutException {
+      throw Exception(
+        'Timeout subiendo imagen por API. Verifica conectividad y estado del servidor.',
+      );
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      final data = e.response?.data;
+      final apiMessage = (data is Map ? data['error']?.toString() : null);
+      throw Exception(
+        'Error de API al subir imagen (${status ?? "sin status"}): ${apiMessage ?? e.message ?? "sin detalle"}',
+      );
+    }
+  }
 
   List<Map<String, dynamic>> _applyLocalFilter(
     List<Map<String, dynamic>> data,
@@ -73,6 +118,11 @@ class _QRecaudaDashboardScreenState
       return true;
     }
     return false;
+  }
+
+  static bool _isHiddenUiField(String key) {
+    final k = key.trim().toLowerCase();
+    return k == 'codigocatastral' || k == 'codigocatastrallower';
   }
 
   void _clearFilters() {
@@ -469,23 +519,28 @@ class _QRecaudaDashboardScreenState
                           cols.addAll(row.keys);
                         }
                         final list = cols
-                            .where((col) => !_isRawIdField(col))
+                            .where(
+                              (col) =>
+                                  !_isRawIdField(col) && !_isHiddenUiField(col),
+                            )
                             .toList();
                         list.removeWhere(
-                          (col) => [
-                            'createdAt',
-                            'updatedAt',
-                            'created_at',
-                            'updated_at',
-                            'creadoEn',
-                            'actualizadoEn',
-                            'sync_status',
-                            'last_update_cloud',
-                            'lastUpdateCloud',
-                            'creado_offline',
-                            'creado_por',
-                            'fecha_creacion',
-                          ].contains(col),
+                          (col) =>
+                              _isHiddenUiField(col) ||
+                              [
+                                'createdAt',
+                                'updatedAt',
+                                'created_at',
+                                'updated_at',
+                                'creadoEn',
+                                'actualizadoEn',
+                                'sync_status',
+                                'last_update_cloud',
+                                'lastUpdateCloud',
+                                'creado_offline',
+                                'creado_por',
+                                'fecha_creacion',
+                              ].contains(col),
                         );
                         list.sort((a, b) {
                           final aLower = a.toLowerCase();
@@ -624,9 +679,7 @@ class _QRecaudaDashboardScreenState
                 ),
               if (state.activeSection != 'usuarios')
                 IconButton(
-                  onPressed: state.isLoading
-                      ? null
-                      : () => _showCreateDialog(state),
+                  onPressed: state.isLoading ? null : _showCreateDialog,
                   icon: const Icon(Icons.add_circle_rounded, size: 28),
                   color: const Color(0xFFD97706),
                   tooltip: 'Crear Documento',
@@ -635,7 +688,7 @@ class _QRecaudaDashboardScreenState
           )
         else if (state.activeSection != 'usuarios')
           ElevatedButton.icon(
-            onPressed: state.isLoading ? null : () => _showCreateDialog(state),
+            onPressed: state.isLoading ? null : _showCreateDialog,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(
               'Crear Documento',
@@ -678,23 +731,28 @@ class _QRecaudaDashboardScreenState
       columnas.addAll(row.keys);
     }
     // Excluir campos de ID y técnicos del filtro visible al usuario
-    final listaColumnas = columnas.where((col) => !_isRawIdField(col)).toList()
-      ..sort();
+    final listaColumnas =
+        columnas
+            .where((col) => !_isRawIdField(col) && !_isHiddenUiField(col))
+            .toList()
+          ..sort();
     listaColumnas.removeWhere(
-      (col) => [
-        'createdAt',
-        'updatedAt',
-        'created_at',
-        'updated_at',
-        'creadoEn',
-        'actualizadoEn',
-        'sync_status',
-        'last_update_cloud',
-        'lastUpdateCloud',
-        'creado_offline',
-        'creado_por',
-        'fecha_creacion',
-      ].contains(col),
+      (col) =>
+          _isHiddenUiField(col) ||
+          [
+            'createdAt',
+            'updatedAt',
+            'created_at',
+            'updated_at',
+            'creadoEn',
+            'actualizadoEn',
+            'sync_status',
+            'last_update_cloud',
+            'lastUpdateCloud',
+            'creado_offline',
+            'creado_por',
+            'fecha_creacion',
+          ].contains(col),
     );
 
     final activeField = state.searchField;
@@ -867,10 +925,14 @@ class _QRecaudaDashboardScreenState
     );
   }
 
-  Future<void> _showCreateDialog(QRecaudaDashboardState state) async {
-    final sectionId = state.activeSection;
-    final template = state.data.isNotEmpty
-        ? state.data.first
+  Future<void> _showCreateDialog() async {
+    await ref
+        .read(qrecaudaDashboardProvider.notifier)
+        .refreshContextOptionsForForms();
+    final refreshedState = ref.read(qrecaudaDashboardProvider);
+    final sectionId = refreshedState.activeSection;
+    final template = refreshedState.data.isNotEmpty
+        ? refreshedState.data.first
         : <String, dynamic>{};
 
     final initialData = <String, dynamic>{
@@ -891,13 +953,20 @@ class _QRecaudaDashboardScreenState
     }
     final fieldSchemas = QRecaudaCollectionFormRegistry.buildFieldSchemas(
       sectionId: sectionId,
-      state: state,
+      state: refreshedState,
     );
-    final hiddenFields =
-        QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
-          sectionId,
-          isEdit: false,
-        );
+    final hiddenFields = [
+      ...QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
+        sectionId,
+        isEdit: false,
+      ),
+    ];
+    _applyMunicipalidadContextToForm(
+      state: refreshedState,
+      sectionId: sectionId,
+      formData: initialData,
+      hiddenFields: hiddenFields,
+    );
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -905,16 +974,17 @@ class _QRecaudaDashboardScreenState
       builder: (_) => DynamicFormDialog(
         initialData: initialData,
         isEdit: false,
-        title: 'Crear en ${state.activeSectionLabel}',
+        title: 'Crear en ${refreshedState.activeSectionLabel}',
         fieldSchemas: fieldSchemas.isEmpty ? null : fieldSchemas,
         hiddenFields: hiddenFields,
+        onUploadImage: _uploadImageToStorage,
       ),
     );
 
     if (result != null && mounted) {
       final payload = QRecaudaCollectionPayloadMapper.fromFormToApi(
         sectionId: sectionId,
-        state: state,
+        state: refreshedState,
         formData: result,
       );
       final error = await ref
@@ -938,6 +1008,9 @@ class _QRecaudaDashboardScreenState
   }
 
   Future<void> _showCreateAdminDialog() async {
+    await ref
+        .read(qrecaudaDashboardProvider.notifier)
+        .refreshContextOptionsForForms();
     final state = ref.read(qrecaudaDashboardProvider);
     if (state.selectedMunicipalidades.length != 1) {
       if (!mounted) return;
@@ -969,12 +1042,13 @@ class _QRecaudaDashboardScreenState
     final emailCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     bool showPassword = false;
-    String? mercadoId;
 
     final created = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocalState) => AlertDialog(
+          backgroundColor: const Color(0xFFF8FAFC),
+          surfaceTintColor: Colors.transparent,
           title: Text(
             'Crear Admin',
             style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
@@ -996,6 +1070,7 @@ class _QRecaudaDashboardScreenState
                 const SizedBox(height: 12),
                 TextField(
                   controller: nombreCtrl,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: const InputDecoration(
                     labelText: 'Nombre completo',
                     prefixIcon: Icon(Icons.person_outline),
@@ -1005,6 +1080,7 @@ class _QRecaudaDashboardScreenState
                 TextField(
                   controller: emailCtrl,
                   keyboardType: TextInputType.emailAddress,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: const InputDecoration(
                     labelText: 'Correo',
                     prefixIcon: Icon(Icons.email_outlined),
@@ -1014,6 +1090,7 @@ class _QRecaudaDashboardScreenState
                 TextField(
                   controller: passCtrl,
                   obscureText: !showPassword,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: InputDecoration(
                     labelText: 'Contrasena',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -1026,30 +1103,9 @@ class _QRecaudaDashboardScreenState
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String?>(
-                  initialValue: mercadoId,
-                  decoration: const InputDecoration(
-                    labelText: 'Mercado (opcional)',
-                    prefixIcon: Icon(Icons.storefront_outlined),
-                  ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Sin mercado'),
-                    ),
-                    ...state.mercadoNames.entries.map(
-                      (entry) => DropdownMenuItem<String?>(
-                        value: entry.key,
-                        child: Text(entry.value),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) => mercadoId = value,
-                ),
                 const SizedBox(height: 8),
                 Text(
-                  '* Esta accion crea usuario en Auth y documento en usuarios.',
+                  '* Esta accion crea usuario admin con alcance de toda la municipalidad.',
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     color: const Color(0xFF64748B),
@@ -1072,11 +1128,10 @@ class _QRecaudaDashboardScreenState
                       email: emailCtrl.text,
                       password: passCtrl.text,
                       municipalidadId: municipalidadId,
-                      mercadoId: mercadoId,
                     );
                 if (!ctx.mounted) return;
                 if (error != null) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
+                  ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(error),
                       backgroundColor: const Color(0xFFDC2626),
@@ -1109,6 +1164,9 @@ class _QRecaudaDashboardScreenState
   }
 
   Future<void> _showCreateCobradorDialog() async {
+    await ref
+        .read(qrecaudaDashboardProvider.notifier)
+        .refreshContextOptionsForForms();
     final state = ref.read(qrecaudaDashboardProvider);
     if (state.selectedMunicipalidades.length != 1) {
       if (!mounted) return;
@@ -1140,14 +1198,19 @@ class _QRecaudaDashboardScreenState
     final emailCtrl = TextEditingController();
     final passCtrl = TextEditingController();
     final codigoCtrl = TextEditingController();
-    final rutaCtrl = TextEditingController();
     bool showPassword = false;
-    String? mercadoId;
+    bool isSaving = false;
+    String mercadoId = '';
+    final selectedLocalIds = <String>{};
+    final localOptions = state.localNames.entries.toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
 
     final created = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocalState) => AlertDialog(
+          backgroundColor: const Color(0xFFF8FAFC),
+          surfaceTintColor: Colors.transparent,
           title: Text(
             'Crear Cobrador',
             style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
@@ -1169,6 +1232,7 @@ class _QRecaudaDashboardScreenState
                 const SizedBox(height: 12),
                 TextField(
                   controller: nombreCtrl,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: const InputDecoration(
                     labelText: 'Nombre completo',
                     prefixIcon: Icon(Icons.person_outline),
@@ -1178,6 +1242,7 @@ class _QRecaudaDashboardScreenState
                 TextField(
                   controller: emailCtrl,
                   keyboardType: TextInputType.emailAddress,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: const InputDecoration(
                     labelText: 'Correo',
                     prefixIcon: Icon(Icons.email_outlined),
@@ -1187,6 +1252,7 @@ class _QRecaudaDashboardScreenState
                 TextField(
                   controller: passCtrl,
                   obscureText: !showPassword,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: InputDecoration(
                     labelText: 'Contrasena',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -1203,41 +1269,101 @@ class _QRecaudaDashboardScreenState
                 TextField(
                   controller: codigoCtrl,
                   textCapitalization: TextCapitalization.characters,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: const InputDecoration(
                     labelText: 'Codigo Cobrador (opcional)',
                     prefixIcon: Icon(Icons.badge_outlined),
                   ),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String?>(
+                DropdownButtonFormField<String>(
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   initialValue: mercadoId,
                   decoration: const InputDecoration(
                     labelText: 'Mercado (opcional)',
                     prefixIcon: Icon(Icons.storefront_outlined),
                   ),
                   items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
+                    const DropdownMenuItem<String>(
+                      value: '',
                       child: Text('Sin mercado'),
                     ),
                     ...state.mercadoNames.entries.map(
-                      (entry) => DropdownMenuItem<String?>(
+                      (entry) => DropdownMenuItem<String>(
                         value: entry.key,
                         child: Text(entry.value),
                       ),
                     ),
                   ],
-                  onChanged: (value) => mercadoId = value,
+                  onChanged: (value) {
+                    setLocalState(() {
+                      mercadoId = value ?? '';
+                    });
+                  },
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: rutaCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Ruta Asignada (IDs por coma)',
-                    prefixIcon: Icon(Icons.alt_route_rounded),
-                    hintText: 'LOC-xxx-001, LOC-xxx-002',
+                Text(
+                  'Ruta Asignada (selecciona locales)',
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: const Color(0xFF334155),
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 170,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: localOptions.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No hay locales disponibles en esta municipalidad.',
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        )
+                      : Scrollbar(
+                          thumbVisibility: true,
+                          child: ListView.builder(
+                            itemCount: localOptions.length,
+                            itemBuilder: (_, index) {
+                              final entry = localOptions[index];
+                              final isSelected = selectedLocalIds.contains(
+                                entry.key,
+                              );
+                              return CheckboxListTile(
+                                dense: true,
+                                value: isSelected,
+                                activeColor: const Color(0xFFD97706),
+                                checkColor: Colors.white,
+                                title: Text(
+                                  entry.value,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 13,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                onChanged: (checked) {
+                                  setLocalState(() {
+                                    if (checked == true) {
+                                      selectedLocalIds.add(entry.key);
+                                    } else {
+                                      selectedLocalIds.remove(entry.key);
+                                    }
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -1256,37 +1382,36 @@ class _QRecaudaDashboardScreenState
               child: const Text('Cancelar'),
             ),
             FilledButton.icon(
-              onPressed: () async {
-                final rutas = rutaCtrl.text
-                    .split(',')
-                    .map((e) => e.trim())
-                    .where((e) => e.isNotEmpty)
-                    .toList();
-                final error = await ref
-                    .read(qrecaudaDashboardProvider.notifier)
-                    .createCobradorUser(
-                      nombre: nombreCtrl.text,
-                      email: emailCtrl.text,
-                      password: passCtrl.text,
-                      municipalidadId: municipalidadId,
-                      mercadoId: mercadoId,
-                      codigoCobrador: codigoCtrl.text,
-                      rutaAsignada: rutas,
-                    );
-                if (!ctx.mounted) return;
-                if (error != null) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(
-                      content: Text(error),
-                      backgroundColor: const Color(0xFFDC2626),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      setLocalState(() => isSaving = true);
+                      final error = await ref
+                          .read(qrecaudaDashboardProvider.notifier)
+                          .createCobradorUser(
+                            nombre: nombreCtrl.text,
+                            email: emailCtrl.text,
+                            password: passCtrl.text,
+                            municipalidadId: municipalidadId,
+                            mercadoId: mercadoId.isEmpty ? null : mercadoId,
+                            codigoCobrador: codigoCtrl.text,
+                            rutaAsignada: selectedLocalIds.toList(),
+                          );
+                      if (!ctx.mounted) return;
+                      if (error != null) {
+                        setLocalState(() => isSaving = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error),
+                            backgroundColor: const Color(0xFFDC2626),
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.pop(ctx, true);
+                    },
               icon: const Icon(Icons.person_add_alt_1_rounded),
-              label: const Text('Crear Cobrador'),
+              label: Text(isSaving ? 'Guardando...' : 'Crear Cobrador'),
             ),
           ],
         ),
@@ -1297,7 +1422,6 @@ class _QRecaudaDashboardScreenState
     emailCtrl.dispose();
     passCtrl.dispose();
     codigoCtrl.dispose();
-    rutaCtrl.dispose();
 
     if (created == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1310,6 +1434,9 @@ class _QRecaudaDashboardScreenState
   }
 
   Future<void> _showEditDialog(Map<String, dynamic> row) async {
+    await ref
+        .read(qrecaudaDashboardProvider.notifier)
+        .refreshContextOptionsForForms();
     final state = ref.read(qrecaudaDashboardProvider);
     final sectionId = state.activeSection;
     final formData = QRecaudaCollectionPayloadMapper.fromApiToForm(
@@ -1320,11 +1447,18 @@ class _QRecaudaDashboardScreenState
       sectionId: sectionId,
       state: state,
     );
-    final hiddenFields =
-        QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
-          sectionId,
-          isEdit: true,
-        );
+    final hiddenFields = [
+      ...QRecaudaCollectionFormRegistry.hiddenSystemFieldsForSection(
+        sectionId,
+        isEdit: true,
+      ),
+    ];
+    _applyMunicipalidadContextToForm(
+      state: state,
+      sectionId: sectionId,
+      formData: formData,
+      hiddenFields: hiddenFields,
+    );
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -1335,6 +1469,7 @@ class _QRecaudaDashboardScreenState
         title: 'Editar Documento',
         fieldSchemas: fieldSchemas.isEmpty ? null : fieldSchemas,
         hiddenFields: hiddenFields,
+        onUploadImage: _uploadImageToStorage,
       ),
     );
 
@@ -1370,6 +1505,25 @@ class _QRecaudaDashboardScreenState
           );
         }
       }
+    }
+  }
+
+  void _applyMunicipalidadContextToForm({
+    required QRecaudaDashboardState state,
+    required String sectionId,
+    required Map<String, dynamic> formData,
+    required List<String> hiddenFields,
+  }) {
+    if (sectionId == 'municipalidades') return;
+    if (state.selectedMunicipalidades.length != 1) return;
+
+    final contextMunicipalidadId =
+        state.selectedMunicipalidades.first['id']?.toString().trim() ?? '';
+    if (contextMunicipalidadId.isEmpty) return;
+
+    formData['municipalidadId'] = contextMunicipalidadId;
+    if (!hiddenFields.contains('municipalidadId')) {
+      hiddenFields.add('municipalidadId');
     }
   }
 

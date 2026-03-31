@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fpdart/fpdart.dart';
 
 import '../../../../app/di/network_provider.dart';
+import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/resolvable_state.dart';
 import '../../data/datasources/qrecauda_remote_datasource.dart';
 import '../../domain/entities/qrecauda_section.dart';
@@ -20,7 +22,9 @@ class QRecaudaDashboardState implements ResolvableState {
   /// Mapas de resolución: ID → nombre legible
   final Map<String, String> municipalidadNames;
   final Map<String, String> mercadoNames;
+  final Map<String, String> localNames;
   final Map<String, String> usuarioNames;
+  final Map<String, String> tipoNegocioNames;
 
   final List<Map<String, dynamic>> selectedMunicipalidades;
 
@@ -35,7 +39,9 @@ class QRecaudaDashboardState implements ResolvableState {
     this.searchValue,
     this.municipalidadNames = const {},
     this.mercadoNames = const {},
+    this.localNames = const {},
     this.usuarioNames = const {},
+    this.tipoNegocioNames = const {},
     this.selectedMunicipalidades = const [],
   });
 
@@ -50,7 +56,9 @@ class QRecaudaDashboardState implements ResolvableState {
     String? searchValue,
     Map<String, String>? municipalidadNames,
     Map<String, String>? mercadoNames,
+    Map<String, String>? localNames,
     Map<String, String>? usuarioNames,
+    Map<String, String>? tipoNegocioNames,
     List<Map<String, dynamic>>? selectedMunicipalidades,
     bool clearError = false,
     bool clearSearch = false,
@@ -67,7 +75,9 @@ class QRecaudaDashboardState implements ResolvableState {
       searchValue: clearSearch ? null : (searchValue ?? this.searchValue),
       municipalidadNames: municipalidadNames ?? this.municipalidadNames,
       mercadoNames: mercadoNames ?? this.mercadoNames,
+      localNames: localNames ?? this.localNames,
       usuarioNames: usuarioNames ?? this.usuarioNames,
+      tipoNegocioNames: tipoNegocioNames ?? this.tipoNegocioNames,
       selectedMunicipalidades: clearMunicipalidades
           ? const []
           : (selectedMunicipalidades ?? this.selectedMunicipalidades),
@@ -94,11 +104,18 @@ class QRecaudaDashboardState implements ResolvableState {
     if (lower.contains('mercado') || lower.contains('market')) {
       return mercadoNames[cleanValue] ?? rawValue;
     }
+    if (lower.contains('local')) {
+      return localNames[cleanValue] ?? rawValue;
+    }
     if (lower.contains('usuario') ||
         lower.contains('user') ||
         lower.contains('uid') ||
         lower.contains('cobrador')) {
       return usuarioNames[cleanValue] ?? rawValue;
+    }
+    if (lower.contains('tiponegocio') ||
+        (lower.contains('tipo') && lower.contains('negocio'))) {
+      return tipoNegocioNames[cleanValue] ?? rawValue;
     }
     return rawValue;
   }
@@ -110,10 +127,13 @@ class QRecaudaDashboardState implements ResolvableState {
         lower.contains('municipality') ||
         lower.contains('mercado') ||
         lower.contains('market') ||
+        lower.contains('local') ||
         lower.contains('usuario') ||
         lower.contains('user') ||
         lower.contains('uid') ||
-        lower.contains('cobrador');
+        lower.contains('cobrador') ||
+        lower.contains('tiponegocio') ||
+        (lower.contains('tipo') && lower.contains('negocio'));
   }
 }
 
@@ -153,11 +173,19 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
         fieldNameLower.contains('market')) {
       return 'mercados';
     }
+    if (fieldNameLower.contains('local')) {
+      return 'locales';
+    }
     if (fieldNameLower.contains('usuario') ||
         fieldNameLower.contains('user') ||
         fieldNameLower.contains('uid') ||
         fieldNameLower.contains('cobrador')) {
       return 'usuarios';
+    }
+    if (fieldNameLower.contains('tiponegocio') ||
+        (fieldNameLower.contains('tipo') &&
+            fieldNameLower.contains('negocio'))) {
+      return 'tipos_negocio';
     }
     return null;
   }
@@ -202,7 +230,9 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
 
     final newMunicipalidad = Map<String, String>.from(state.municipalidadNames);
     final newMercado = Map<String, String>.from(state.mercadoNames);
+    final newLocal = Map<String, String>.from(state.localNames);
     final newUsuario = Map<String, String>.from(state.usuarioNames);
+    final newTipoNegocio = Map<String, String>.from(state.tipoNegocioNames);
 
     for (final entry in idsToResolve.entries) {
       final collection = entry.key;
@@ -211,7 +241,9 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
         collection,
         newMunicipalidad,
         newMercado,
+        newLocal,
         newUsuario,
+        newTipoNegocio,
       );
       final limitedIds = ids.take(30);
       await Future.wait(
@@ -230,7 +262,9 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     state = state.copyWith(
       municipalidadNames: newMunicipalidad,
       mercadoNames: newMercado,
+      localNames: newLocal,
       usuarioNames: newUsuario,
+      tipoNegocioNames: newTipoNegocio,
     );
   }
 
@@ -240,8 +274,12 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
         return state.municipalidadNames;
       case 'mercados':
         return state.mercadoNames;
+      case 'locales':
+        return state.localNames;
       case 'usuarios':
         return state.usuarioNames;
+      case 'tipos_negocio':
+        return state.tipoNegocioNames;
       default:
         return {};
     }
@@ -251,15 +289,21 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
     String collection,
     Map<String, String> municipalidad,
     Map<String, String> mercado,
+    Map<String, String> local,
     Map<String, String> usuario,
+    Map<String, String> tipoNegocio,
   ) {
     switch (collection) {
       case 'municipalidades':
         return municipalidad;
       case 'mercados':
         return mercado;
+      case 'locales':
+        return local;
       case 'usuarios':
         return usuario;
+      case 'tipos_negocio':
+        return tipoNegocio;
       default:
         return {};
     }
@@ -295,6 +339,116 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       searchField: 'municipalidadId',
       searchValue: contextMunicipalidadId,
       searchOperator: '==',
+    );
+  }
+
+  Map<String, dynamic> _enforceContextMunicipalidadId({
+    required String sectionId,
+    required Map<String, dynamic> payload,
+  }) {
+    final contextMunicipalidadId = _contextMunicipalidadIdForSection(sectionId);
+    if (contextMunicipalidadId == null) return payload;
+
+    final forcedPayload = Map<String, dynamic>.from(payload);
+    forcedPayload['municipalidadId'] = contextMunicipalidadId;
+    return forcedPayload;
+  }
+
+  Map<String, String> _buildIdNameMap(List<Map<String, dynamic>> docs) {
+    final map = <String, String>{};
+    for (final doc in docs) {
+      final id = doc['id']?.toString().trim() ?? '';
+      if (id.isEmpty) continue;
+      final name = _extractName(doc) ?? id;
+      map[id] = name;
+    }
+    return map;
+  }
+
+  Future<void> refreshContextOptionsForForms() async {
+    final contextMunicipalidadId = _contextMunicipalidadIdForSection(
+      'mercados',
+    );
+    final municipalidadesFuture = _dataSource.getCollection(
+      'municipalidades',
+      limit: 300,
+    );
+    final mercadosFuture = _dataSource.getCollection(
+      'mercados',
+      limit: 300,
+      searchField: contextMunicipalidadId == null ? null : 'municipalidadId',
+      searchValue: contextMunicipalidadId,
+      searchOperator: contextMunicipalidadId == null ? null : '==',
+    );
+    final usuariosFuture = _dataSource.getCollection(
+      'usuarios',
+      limit: 300,
+      searchField: contextMunicipalidadId == null ? null : 'municipalidadId',
+      searchValue: contextMunicipalidadId,
+      searchOperator: contextMunicipalidadId == null ? null : '==',
+    );
+    final localesFuture = _dataSource.getCollection(
+      'locales',
+      limit: 500,
+      searchField: contextMunicipalidadId == null ? null : 'municipalidadId',
+      searchValue: contextMunicipalidadId,
+      searchOperator: contextMunicipalidadId == null ? null : '==',
+    );
+    final tiposNegocioFuture = _dataSource.getCollection(
+      'tipos_negocio',
+      limit: 300,
+      searchField: contextMunicipalidadId == null ? null : 'municipalidadId',
+      searchValue: contextMunicipalidadId,
+      searchOperator: contextMunicipalidadId == null ? null : '==',
+    );
+
+    final results =
+        await Future.wait<
+          Either<Failure, ({List<Map<String, dynamic>> data, int total})>
+        >([
+          municipalidadesFuture,
+          mercadosFuture,
+          usuariosFuture,
+          localesFuture,
+          tiposNegocioFuture,
+        ]);
+
+    final municipalidadesResult = results[0];
+    final mercadosResult = results[1];
+    final usuariosResult = results[2];
+    final localesResult = results[3];
+    final tiposNegocioResult = results[4];
+
+    var newMunicipalidadNames = state.municipalidadNames;
+    var newMercadoNames = state.mercadoNames;
+    var newLocalNames = state.localNames;
+    var newUsuarioNames = state.usuarioNames;
+    var newTipoNegocioNames = state.tipoNegocioNames;
+
+    municipalidadesResult.fold((_) {}, (response) {
+      newMunicipalidadNames = _buildIdNameMap(response.data);
+    });
+
+    mercadosResult.fold((_) {}, (response) {
+      newMercadoNames = _buildIdNameMap(response.data);
+    });
+
+    usuariosResult.fold((_) {}, (response) {
+      newUsuarioNames = _buildIdNameMap(response.data);
+    });
+    localesResult.fold((_) {}, (response) {
+      newLocalNames = _buildIdNameMap(response.data);
+    });
+    tiposNegocioResult.fold((_) {}, (response) {
+      newTipoNegocioNames = _buildIdNameMap(response.data);
+    });
+
+    state = state.copyWith(
+      municipalidadNames: newMunicipalidadNames,
+      mercadoNames: newMercadoNames,
+      localNames: newLocalNames,
+      usuarioNames: newUsuarioNames,
+      tipoNegocioNames: newTipoNegocioNames,
     );
   }
 
@@ -492,9 +646,14 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       return prepared.error;
     }
 
+    final enforcedPayload = _enforceContextMunicipalidadId(
+      sectionId: section.id,
+      payload: prepared.payload,
+    );
+
     final result = await _dataSource.createDocument(
       section.collection,
-      prepared.payload,
+      enforcedPayload,
     );
     return result.fold(
       (failure) {
@@ -523,10 +682,15 @@ class QRecaudaDashboardViewModel extends StateNotifier<QRecaudaDashboardState> {
       return prepared.error;
     }
 
+    final enforcedPayload = _enforceContextMunicipalidadId(
+      sectionId: section.id,
+      payload: prepared.payload,
+    );
+
     final result = await _dataSource.updateDocument(
       section.collection,
       id,
-      prepared.payload,
+      enforcedPayload,
     );
     return result.fold(
       (failure) {

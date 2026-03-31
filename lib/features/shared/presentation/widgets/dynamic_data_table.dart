@@ -102,6 +102,7 @@ class DynamicDataTable extends StatefulWidget {
   final void Function(Map<String, dynamic> row)? onDelete;
   final void Function(Map<String, dynamic> row)? onSelectContext;
   final bool Function(Map<String, dynamic> row)? isContextSelected;
+
   /// Acción extra opcional por fila (p. ej. "Ajustar Stock" para inventory).
   final void Function(Map<String, dynamic> row)? onExtraAction;
   final IconData? extraActionIcon;
@@ -362,8 +363,7 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
                         widget.extraActionIcon ?? Icons.tune_rounded,
                         size: 18,
                       ),
-                      color: widget.extraActionColor ??
-                          const Color(0xFF059669),
+                      color: widget.extraActionColor ?? const Color(0xFF059669),
                       tooltip: widget.extraActionTooltip ?? 'Acción',
                       onPressed: () => widget.onExtraAction!(row),
                     ),
@@ -1345,7 +1345,9 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
   Widget _listCell(String field, List<dynamic> list) {
     if (list.isEmpty) return Text('—', style: _Styles.cellMuted);
 
-    final listStrings = list.map((item) => item?.toString().trim() ?? '').toList();
+    final listStrings = list
+        .map((item) => item?.toString().trim() ?? '')
+        .toList();
     if (listStrings.isNotEmpty && listStrings.every(_isImageUrl)) {
       return _imageListCell(list);
     }
@@ -1453,6 +1455,9 @@ class _DynamicDataTableState extends State<DynamicDataTable> {
     'category_id',
     'categoryId',
     'client_id',
+    // QRecauda (ocultos en vista administrativa)
+    'codigoCatastral',
+    'codigoCatastralLower',
   };
 
   /// Mapeo de nombres técnicos de columna → etiquetas legibles en español.
